@@ -11,6 +11,7 @@
 
 import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.plugin.mpp.apple.XCFramework
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
@@ -35,6 +36,10 @@ kotlin {
     }
 
     // --- Apple targets (CLAUDE.md §1) ---------------------------------------
+    // KMMBridge consumes the XCFramework that this block produces; it bundles all
+    // the per-target slices (iosArm64 device, iosSimulatorArm64 simulator,
+    // macosArm64 desktop) into a single artifact for SPM to reference.
+    val xcf = XCFramework("Backgrounder")
     listOf(iosArm64(), iosSimulatorArm64(), macosArm64()).forEach { target ->
         target.binaries.framework {
             baseName = "Backgrounder"
@@ -42,6 +47,7 @@ kotlin {
             // Pin the bundle id so SKIE doesn't fall back to the framework name.
             binaryOption("bundleId", "dev.backgrounder.shared")
             // CLAUDE.md §8: SKIE wraps the framework export.
+            xcf.add(this)
         }
     }
 
