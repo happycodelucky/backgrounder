@@ -1,0 +1,5 @@
+# Pinned exactly so local `mkdocs build` and CI build the same site.
+# Bump these in lockstep; web-search latest stable before bumping (CLAUDE.md §2).
+mkdocs==1.6.1
+mkdocs-material==9.7.6
+pymdown-extensions==10.21.2

@@ -18,6 +18,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.android.kotlin.multiplatform.library)
     alias(libs.plugins.skie)
+    alias(libs.plugins.dokka)
 }
 
 kotlin {

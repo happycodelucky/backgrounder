@@ -18,6 +18,7 @@ kotlin = "2.3.20"
 agp = "9.2.0"                  # com.android.kotlin.multiplatform.library variant (CLAUDE.md §2).
 skie = "0.10.11"               # Supports Kotlin 2.3.20.
 kmmbridge = "1.2.1"
+dokka = "2.0.0"                # Kotlin API doc generator; Dokka v2 task layout.
 
 # --- Android SDK ------------------------------------------------------------
 android-compile-sdk = "36"
@@ -101,4 +102,5 @@ kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref 
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 android-kotlin-multiplatform-library = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
 skie = { id = "co.touchlab.skie", version.ref = "skie" }
+dokka = { id = "org.jetbrains.dokka", version.ref = "dokka" }
 kmmbridge = { id = "co.touchlab.kmmbridge", version.ref = "kmmbridge" }

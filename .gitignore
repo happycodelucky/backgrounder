@@ -31,3 +31,8 @@ DerivedData/
 # --- KMMBridge transient outputs ---
 spm/
 .kmmbridge/
+
+# --- Docs toolchain ---
+.venv/
+site/
+docs/api/

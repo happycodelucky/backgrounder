@@ -1,0 +1,125 @@
+# Backgrounder docs site (CLAUDE.md §10 / plan §"Documentation site").
+#
+# Source of truth for docs structure. Auto-discovery is deliberately disabled —
+# explicit `nav:` keeps page ordering deterministic, the way Wire does it.
+#
+# Build:
+#   .venv/bin/mkdocs serve   # local preview at http://localhost:8000
+#   .venv/bin/mkdocs build --strict   # fails on broken internal links / nav drift
+
+site_name: Backgrounder
+site_description: A Kotlin Multiplatform background-work scheduler.
+site_url: https://paulbates.github.io/backgrounder/
+repo_name: paulbates/backgrounder
+repo_url: https://github.com/paulbates/backgrounder
+edit_uri: edit/main/docs/
+copyright: Copyright &copy; 2026 Paul Bates
+
+docs_dir: docs
+site_dir: site
+
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.indexes
+    - navigation.tracking
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link        # link Android/iOS/macOS tabs across pages
+    - content.action.edit
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: blue
+      accent: blue
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: blue
+      accent: blue
+      toggle:
+        icon: material/weather-night
+        name: Switch to light mode
+  font:
+    text: Inter
+    code: JetBrains Mono
+  icon:
+    repo: fontawesome/brands/github
+
+markdown_extensions:
+  # Core
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+      toc_depth: 3
+  # PyMdown — same set Wire uses, plus a couple we want for callouts.
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      check_paths: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+      slugify: !!python/object/apply:pymdownx.slugs.slugify {kwds: {case: lower}}
+  - pymdownx.tasklist:
+      custom_checkbox: true
+
+plugins:
+  - search
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/paulbates/backgrounder
+
+# Explicit nav — never auto-discovered. Page ordering matters; this file is the truth.
+nav:
+  - Overview: index.md
+  - Getting started: getting-started.md
+  - Installation: installation.md
+  - Concepts:
+    - concepts/architecture.md
+    - concepts/worker-context-and-di.md
+    - concepts/ephemeral.md
+    - concepts/guarantees.md
+  - Recipes:
+    - recipes/one-shot.md
+    - recipes/periodic.md
+    - recipes/cancel.md
+    - recipes/inspect.md
+    - recipes/input.md
+    - recipes/retry-backoff.md
+    - recipes/test-workers.md
+  - Platforms:
+    - platforms/android.md
+    - platforms/ios.md
+    - platforms/macos.md
+    - platforms/force-quit.md
+  - Contributing: contributing.md
+  - Changelog: changelog.md
+
+# Strict mode: fail the build on a broken link or a dead anchor.
+strict: true
