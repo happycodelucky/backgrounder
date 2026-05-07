@@ -36,3 +36,6 @@ spm/
 .venv/
 site/
 docs/api/
+
+# --- Claude Code review-loop artefacts ---
+.claude/findings/
