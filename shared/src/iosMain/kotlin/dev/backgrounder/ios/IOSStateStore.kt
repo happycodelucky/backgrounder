@@ -1,5 +1,6 @@
 package dev.backgrounder.ios
 
+import co.touchlab.kermit.Logger
 import com.russhwolf.settings.Settings
 import dev.backgrounder.TaskId
 import dev.backgrounder.WorkInput
@@ -19,6 +20,8 @@ import kotlin.time.Clock
 internal class IOSStateStore(
     private val settings: Settings,
 ) {
+    private val log = Logger.withTag("Backgrounder/iOS/StateStore")
+
     fun writeOnSchedule(
         taskId: TaskId,
         kind: Kind,
@@ -62,7 +65,12 @@ internal class IOSStateStore(
 
     fun readInput(taskId: TaskId): WorkInput {
         val raw = settings.getStringOrNull(keys(taskId).input) ?: return WorkInput.empty()
-        return runCatching { WorkInput.fromJson(raw) }.getOrElse { WorkInput.empty() }
+        return runCatching { WorkInput.fromJson(raw) }.getOrElse { e ->
+            // Don't crash the OS handler — but make corrupted state visible. The
+            // worker fires with `WorkInput.empty()`, the user can recover.
+            log.e(e) { "[$taskId] failed to deserialize persisted WorkInput; falling back to empty" }
+            WorkInput.empty()
+        }
     }
 
     fun readNextRunEpochMs(taskId: TaskId): Long? {
@@ -121,7 +129,12 @@ internal class IOSStateStore(
         ).forEach(settings::remove)
     }
 
-    /** Every task id with an entry — derived by scanning the schema_version key suffix. */
+    /**
+     * Every task id with an entry — derived by scanning the schema_version key
+     * suffix. Returned in deterministic ascending order by [TaskId.value] so
+     * [scheduled] snapshots are stable across calls (the underlying
+     * `settings.keys` iteration order is platform-defined).
+     */
     fun knownTaskIds(): Set<TaskId> {
         val all = settings.keys
         return all
@@ -130,7 +143,8 @@ internal class IOSStateStore(
             .mapNotNull { key ->
                 val raw = key.removePrefix(PREFIX).removeSuffix(SCHEMA_VERSION_SUFFIX)
                 runCatching { TaskId(raw) }.getOrNull()
-            }.toSet()
+            }.sortedBy { it.value }
+            .toCollection(LinkedHashSet())
     }
 
     private data class Keys(

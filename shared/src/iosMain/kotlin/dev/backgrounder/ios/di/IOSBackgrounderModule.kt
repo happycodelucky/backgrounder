@@ -1,3 +1,4 @@
+// ExperimentalForeignApi: required by `NSUserDefaults(suiteName:)` cinterop call.
 @file:OptIn(ExperimentalForeignApi::class)
 
 package dev.backgrounder.ios.di

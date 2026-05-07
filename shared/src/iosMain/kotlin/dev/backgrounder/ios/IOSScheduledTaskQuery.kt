@@ -1,3 +1,4 @@
+// ExperimentalForeignApi: required for cinterop FFI types. Stable in practice.
 @file:OptIn(ExperimentalForeignApi::class)
 
 package dev.backgrounder.ios
@@ -52,8 +53,10 @@ internal class IOSScheduledTaskQuery(
     private suspend fun pendingByIdentifier(): Map<String, BGTaskRequest> =
         suspendCancellableCoroutine { cont ->
             BGTaskScheduler.sharedScheduler.getPendingTaskRequestsWithCompletionHandler { list ->
-                @Suppress("UNCHECKED_CAST")
-                val requests = (list as? List<BGTaskRequest>).orEmpty()
+                // Defensive: K/N stubs the callback as `List<*>?` and the element
+                // type isn't checked until access. filterIsInstance drops any
+                // stray non-BGTaskRequest entry rather than crashing later.
+                val requests = list.orEmpty().filterIsInstance<BGTaskRequest>()
                 cont.resume(requests.associateBy { it.identifier })
             }
         }

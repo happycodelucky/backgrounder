@@ -18,6 +18,9 @@ import kotlin.native.ObjCName
  * are non-blocking. [scheduled] is `suspend` because Android's
  * `WorkManager.getWorkInfos` returns a `ListenableFuture` and iOS's
  * `BGTaskScheduler.getPendingTaskRequests` is callback-shaped.
+ *
+ * `@OptIn(ExperimentalObjCName::class)`: standard Swift-rename annotation;
+ * stable in practice and used by SKIE for boundary refinement.
  */
 @OptIn(ExperimentalObjCName::class)
 public interface Scheduler {

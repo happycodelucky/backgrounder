@@ -1,3 +1,5 @@
+// ExperimentalForeignApi: required for cinterop FFI types
+// (NSBackgroundActivityScheduler, NSBackgroundActivityResult). Stable in practice.
 @file:OptIn(ExperimentalForeignApi::class)
 
 package dev.backgrounder.macos
@@ -57,10 +59,22 @@ internal class NSBackgroundActivityBackedScheduler(
             SupervisorJob() + Dispatchers.Default + CoroutineName("Backgrounder.macOS"),
         )
 
-    /** Live registry keyed by task id. Owned by this scheduler instance. */
+    /**
+     * Live registry keyed by task id. Owned by this scheduler instance.
+     * MUST NOT call suspend functions inside `synchronized(lock) { ... }` blocks
+     * — the `Scheduler` interface methods are non-suspending by design (see
+     * CLAUDE.md §3 and Scheduler KDoc).
+     */
     private val lock = SynchronizedObject()
     private val activities: MutableMap<TaskId, NSBackgroundActivityScheduler> = mutableMapOf()
     private val attempts: MutableMap<TaskId, Int> = mutableMapOf()
+
+    /**
+     * Track each scheduled request's [ScheduledTask.Kind] so [scheduled] can
+     * report it accurately (NSBackgroundActivityScheduler exposes `repeats` but
+     * not via a public Kotlin/Native API — easier to track ourselves).
+     */
+    private val kinds: MutableMap<TaskId, ScheduledTask.Kind> = mutableMapOf()
 
     override fun schedule(
         request: WorkRequest,
@@ -83,23 +97,34 @@ internal class NSBackgroundActivityBackedScheduler(
                     when (request) {
                         is WorkRequest.OneTime -> {
                             repeats = false
-                            interval = (request.initialDelay.inWholeMilliseconds / 1000.0).coerceAtLeast(1.0)
-                            tolerance = (interval * 0.1).coerceAtLeast(1.0)
+                            // For one-shots, `interval` is the minimum delay before the
+                            // single fire. Allow zero — `WorkRequest.OneTime.initialDelay`
+                            // can be `Duration.ZERO`. Foundation's contract is tolerance
+                            // <= interval, so cap tolerance at the (possibly zero) interval.
+                            interval = (request.initialDelay.inWholeMilliseconds / 1000.0).coerceAtLeast(0.0)
+                            tolerance = (interval * 0.1).coerceAtMost(interval)
                         }
 
                         is WorkRequest.Periodic -> {
                             repeats = true
                             interval = (request.interval.inWholeMilliseconds / 1000.0).coerceAtLeast(1.0)
-                            tolerance = (
+                            // Tolerance must be <= interval; the explicit flexWindow is also
+                            // capped here so a misconfigured flex doesn't violate the contract.
+                            val rawTolerance =
                                 request.flexWindow?.inWholeMilliseconds?.let { it / 1000.0 }
                                     ?: (interval * 0.1).coerceAtLeast(60.0)
-                            )
+                            tolerance = rawTolerance.coerceAtMost(interval)
                         }
                     }
                 }
 
             activities[request.taskId] = activity
             attempts[request.taskId] = 0
+            kinds[request.taskId] =
+                when (request) {
+                    is WorkRequest.OneTime -> ScheduledTask.Kind.OneTime
+                    is WorkRequest.Periodic -> ScheduledTask.Kind.Periodic
+                }
             launchActivity(activity, request)
             ScheduleOutcome.Scheduled
         }
@@ -181,6 +206,7 @@ internal class NSBackgroundActivityBackedScheduler(
             val activity = activities.remove(taskId) ?: return@synchronized CancelOutcome.NoSuchTask
             activity.invalidate()
             attempts.remove(taskId)
+            kinds.remove(taskId)
             ephemeral.remove(taskId)
             eventListener.onCancelled(taskId)
             CancelOutcome.Cancelled(pendingCleared = 1)
@@ -189,12 +215,14 @@ internal class NSBackgroundActivityBackedScheduler(
     override fun cancelAll(): CancelOutcome =
         synchronized(lock) {
             if (activities.isEmpty()) return@synchronized CancelOutcome.NoSuchTask
-            val count = activities.size
+            val ids = activities.keys.toList()
             activities.values.forEach { it.invalidate() }
             activities.clear()
             attempts.clear()
+            kinds.clear()
             ephemeral.clear()
-            CancelOutcome.Cancelled(pendingCleared = count)
+            ids.forEach(eventListener::onCancelled)
+            CancelOutcome.Cancelled(pendingCleared = ids.size)
         }
 
     override suspend fun scheduled(): List<ScheduledTask> =
@@ -203,7 +231,7 @@ internal class NSBackgroundActivityBackedScheduler(
                 val attempt = attempts[id] ?: 0
                 ScheduledTask(
                     taskId = id,
-                    kind = ScheduledTask.Kind.OneTime, // Refined below if we tracked the original.
+                    kind = kinds[id] ?: ScheduledTask.Kind.OneTime,
                     state = if (attempt > 0) ScheduledTask.State.Backoff else ScheduledTask.State.Pending,
                     nextRunHint = null,
                     attempt = attempt,

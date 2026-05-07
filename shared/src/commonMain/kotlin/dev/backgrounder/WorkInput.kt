@@ -2,6 +2,7 @@ package dev.backgrounder
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlin.native.HiddenFromObjC
 
 /**
  * A typed key/value bag passed to a [BackgroundWorker] at scheduling time.
@@ -46,11 +47,19 @@ public class WorkInput private constructor(
         public fun empty(): WorkInput = WorkInput(emptyMap())
 
         /**
-         * Build a [WorkInput] from key/value pairs.
+         * Build a [WorkInput] from key/value pairs. Kotlin-only (the `Pair`
+         * vararg form doesn't translate cleanly to Swift; Swift consumers should
+         * use [ofMap] or compose entries via a `Map`).
+         *
+         * `@OptIn(ExperimentalObjCRefinement::class)`: standard SKIE-recognised
+         * annotation for hiding a Kotlin-only API from the generated ObjC
+         * header. Stable in practice.
          *
          * @throws IllegalArgumentException if the serialized size exceeds
          *   [MAX_SERIALIZED_BYTES] or a key is empty.
          */
+        @OptIn(kotlin.experimental.ExperimentalObjCRefinement::class)
+        @HiddenFromObjC
         public fun of(vararg pairs: Pair<String, WorkValue>): WorkInput = ofMap(pairs.toMap(LinkedHashMap()))
 
         public fun ofMap(map: Map<String, WorkValue>): WorkInput {

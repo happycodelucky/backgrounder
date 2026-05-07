@@ -1,6 +1,11 @@
 package dev.backgrounder
 
 import com.russhwolf.settings.MapSettings
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -51,6 +56,23 @@ class EphemeralRegistryTest {
         registry.clear()
         assertTrue(registry.snapshot().isEmpty())
     }
+
+    @Test
+    fun concurrentAddsDoNotLoseEntries() =
+        runTest {
+            // Without the lock, two concurrent add() calls can both read the
+            // pre-add snapshot and one wins, dropping the other. Run a
+            // moderately wide fan-out on a real dispatcher so the worker threads
+            // actually contend.
+            val registry = EphemeralRegistry(MapSettings())
+            val ids = (0 until 64).map { TaskId("dev.backgrounder.test.t$it") }
+            withContext(Dispatchers.Default) {
+                ids
+                    .map { id -> async { registry.add(id) } }
+                    .awaitAll()
+            }
+            assertEquals(ids.toSet(), registry.snapshot())
+        }
 
     @Test
     fun persistsAcrossInstances() {

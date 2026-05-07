@@ -33,19 +33,31 @@ internal class AndroidEphemeralSweep(
         }
         log.i { "sweeping ${ids.size} ephemeral request(s) before app init" }
         val workManager = WorkManager.getInstance(context)
+
+        // Fire all cancellations up-front (they're enqueued in parallel by
+        // WorkManager), then wait against a single shared budget. This caps
+        // the cold-start cost at SWEEP_DEADLINE_MS no matter how many ids are
+        // pending — vs. SWEEP_DEADLINE_MS × N if we awaited each one.
         val operations = ids.map { id -> id to workManager.cancelUniqueWork(id.value) }
+        val deadlineNs = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(SWEEP_DEADLINE_MS)
         operations.forEach { (id, op) ->
+            val remainingMs = TimeUnit.NANOSECONDS.toMillis((deadlineNs - System.nanoTime()).coerceAtLeast(0L))
+            if (remainingMs == 0L) {
+                log.w { "sweep budget exhausted before cancelling $id; continuing without await" }
+                return@forEach
+            }
             try {
-                op.result.get(SWEEP_DEADLINE_MS, TimeUnit.MILLISECONDS)
+                op.result.get(remainingMs, TimeUnit.MILLISECONDS)
                 log.d { "cancelled ephemeral $id" }
             } catch (t: Throwable) {
-                log.e(t) { "failed to cancel ephemeral $id within ${SWEEP_DEADLINE_MS}ms" }
+                log.e(t) { "failed to cancel ephemeral $id within remaining ${remainingMs}ms" }
             }
         }
         ephemeral.clear()
     }
 
     internal companion object {
+        /** Total wall budget for the cold-start sweep across *all* ephemeral ids. */
         internal const val SWEEP_DEADLINE_MS: Long = 5_000L
     }
 }

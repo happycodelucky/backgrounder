@@ -11,12 +11,10 @@ internal actual fun platformAttachTo(application: Any?) {
 
 internal actual fun platformRegisterHandlers() {
     val koin =
-        runCatching { KoinPlatform.getKoin() }.getOrElse {
-            error(
-                "Backgrounder.registerHandlers() requires Koin to be started. " +
-                    "Call startKoin { modules(backgrounderCommonModule, backgrounderMacOSModule, ...) } first.",
-            )
-        }
+        KoinPlatform.getKoinOrNull() ?: error(
+            "Backgrounder.registerHandlers() requires Koin to be started. " +
+                "Call startKoin { modules(backgrounderCommonModule, backgrounderMacOSModule, ...) } first.",
+        )
     // macOS doesn't need handler registration ahead of time — NSBackgroundActivityScheduler
     // owns the scheduling entirely. We do still need to seal the WorkerRegistry to prevent
     // late factory registration, and we sweep ephemeral state for parity with iOS.
