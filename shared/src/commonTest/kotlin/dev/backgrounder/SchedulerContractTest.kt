@@ -11,7 +11,7 @@ import kotlin.time.Duration.Companion.seconds
 /**
  * Contract test for [Scheduler] implementations. Currently exercises the
  * in-memory [FakeScheduler]; platform actuals (`WorkManagerScheduler`,
- * `BGTaskBackedScheduler`, `NsBackgroundActivityBackedScheduler`) get their
+ * `BGTaskBackedScheduler`, `NSBackgroundActivityBackedScheduler`) get their
  * own platform-test variants.
  */
 class SchedulerContractTest {

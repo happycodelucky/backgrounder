@@ -11,7 +11,7 @@ import org.koin.dsl.module
  * Cross-platform Koin module — declares the singletons that live in
  * [WorkerRegistry] and [EphemeralRegistry], plus a default no-op
  * [BackgrounderEventListener]. Platform-specific modules
- * ([androidBackgrounderModule], [iosBackgrounderModule], etc.) bind the
+ * ([androidBackgrounderModule], [iOSBackgrounderModule], etc.) bind the
  * `Scheduler` implementation and a [Settings] instance.
  *
  * Wire all three into your `startKoin { ... }` call:

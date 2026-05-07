@@ -21,7 +21,7 @@ import platform.Foundation.NSBundle
  *  1. Validates each registered task id appears in `BGTaskSchedulerPermittedIdentifiers`
  *     in the app's `Info.plist`. Missing ids produce a Kermit error.
  *  2. Calls `BGTaskScheduler.register(forTaskWithIdentifier:using:launchHandler:)`
- *     for each registered task id, dispatching to [IosCoroutineBridge.handle].
+ *     for each registered task id, dispatching to [IOSCoroutineBridge.handle].
  *  3. Resurrects active periodic schedules — for any task id whose state record
  *     has `kind=periodic` and `active=true`, if iOS has no pending request for
  *     it, re-submits one. (Force-quit + relaunch recovery.)
@@ -30,8 +30,8 @@ import platform.Foundation.NSBundle
  */
 internal class BGTaskHandlerRegistration(
     private val registry: WorkerRegistry,
-    private val state: IosStateStore,
-    private val bridge: IosCoroutineBridge,
+    private val state: IOSStateStore,
+    private val bridge: IOSCoroutineBridge,
 ) {
     private val log = Logger.withTag("Backgrounder/iOS/Registration")
 
@@ -86,7 +86,7 @@ internal class BGTaskHandlerRegistration(
     private fun resurrectActivePeriodics() {
         val nowMs = Clock.System.now().toEpochMilliseconds()
         state.knownTaskIds()
-            .filter { state.readKind(it) == IosStateStore.Kind.Periodic && state.readActive(it) }
+            .filter { state.readKind(it) == IOSStateStore.Kind.Periodic && state.readActive(it) }
             .forEach { id ->
                 val intervalMs = state.readIntervalMs(id) ?: return@forEach
                 val lastRunMs = state.readLastRunEpochMs(id) ?: nowMs

@@ -14,9 +14,9 @@ import platform.BackgroundTasks.BGTaskScheduler
  * handler can ever fire before the sweep completes (stronger guarantee than
  * Android's same-named operation).
  */
-internal class IosEphemeralSweep(
+internal class IOSEphemeralSweep(
     private val ephemeral: EphemeralRegistry,
-    private val state: IosStateStore,
+    private val state: IOSStateStore,
 ) {
     private val log = Logger.withTag("Backgrounder/iOS/EphemeralSweep")
 

@@ -9,10 +9,10 @@ import dev.backgrounder.Scheduler
 import dev.backgrounder.di.SettingsQualifier
 import dev.backgrounder.ios.BGTaskBackedScheduler
 import dev.backgrounder.ios.BGTaskHandlerRegistration
-import dev.backgrounder.ios.IosCoroutineBridge
-import dev.backgrounder.ios.IosEphemeralSweep
-import dev.backgrounder.ios.IosStateStore
-import dev.backgrounder.ios.IosTaskMutexes
+import dev.backgrounder.ios.IOSCoroutineBridge
+import dev.backgrounder.ios.IOSEphemeralSweep
+import dev.backgrounder.ios.IOSStateStore
+import dev.backgrounder.ios.IOSTaskMutexes
 import kotlinx.cinterop.ExperimentalForeignApi
 import org.koin.core.module.Module
 import org.koin.dsl.module
@@ -23,18 +23,18 @@ import platform.Foundation.NSUserDefaults
  *
  * ```
  * KoinKt.startKoin {
- *     modules(backgrounderCommonModule, backgrounderIosModule, /* yours */)
+ *     modules(backgrounderCommonModule, backgrounderIOSModule, /* yours */)
  * }
  * ```
  */
-public val backgrounderIosModule: Module = module {
+public val backgrounderIOSModule: Module = module {
     single<Settings>(qualifier = SettingsQualifier) {
         NSUserDefaultsSettings(
             NSUserDefaults(suiteName = "dev.backgrounder.shared"),
         )
     }
-    single { IosStateStore(get<Settings>(qualifier = SettingsQualifier)) }
-    single { IosTaskMutexes() }
+    single { IOSStateStore(get<Settings>(qualifier = SettingsQualifier)) }
+    single { IOSTaskMutexes() }
 
     single<BGTaskBackedScheduler> {
         BGTaskBackedScheduler(
@@ -47,7 +47,7 @@ public val backgrounderIosModule: Module = module {
     single<Scheduler> { get<BGTaskBackedScheduler>() }
 
     single {
-        IosCoroutineBridge(
+        IOSCoroutineBridge(
             registry = get(),
             state = get(),
             mutexes = get(),
@@ -58,6 +58,6 @@ public val backgrounderIosModule: Module = module {
         )
     }
 
-    single { IosEphemeralSweep(get<EphemeralRegistry>(), get<IosStateStore>()) }
+    single { IOSEphemeralSweep(get<EphemeralRegistry>(), get<IOSStateStore>()) }
     single { BGTaskHandlerRegistration(get(), get(), get()) }
 }

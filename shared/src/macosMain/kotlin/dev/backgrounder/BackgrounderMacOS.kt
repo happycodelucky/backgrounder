@@ -13,7 +13,7 @@ internal actual fun platformRegisterHandlers() {
     val koin = runCatching { KoinPlatform.getKoin() }.getOrElse {
         error(
             "Backgrounder.registerHandlers() requires Koin to be started. " +
-                "Call startKoin { modules(backgrounderCommonModule, backgrounderMacosModule, ...) } first.",
+                "Call startKoin { modules(backgrounderCommonModule, backgrounderMacOSModule, ...) } first.",
         )
     }
     // macOS doesn't need handler registration ahead of time — NSBackgroundActivityScheduler

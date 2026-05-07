@@ -13,10 +13,10 @@ import kotlin.time.Clock
  * process death and reboot.
  *
  * Each task id has a flat namespace `tasks.<id>.*`. Concurrent writes within
- * a single task id are serialised by [IosTaskMutexes]; cross-task writes are
+ * a single task id are serialised by [IOSTaskMutexes]; cross-task writes are
  * independent.
  */
-internal class IosStateStore(private val settings: Settings) {
+internal class IOSStateStore(private val settings: Settings) {
 
     fun writeOnSchedule(
         taskId: TaskId,

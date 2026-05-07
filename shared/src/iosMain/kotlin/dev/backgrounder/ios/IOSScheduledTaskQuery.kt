@@ -12,11 +12,11 @@ import platform.BackgroundTasks.BGTaskRequest
 import platform.BackgroundTasks.BGTaskScheduler
 
 /**
- * Cross-references the persistent [IosStateStore] with iOS's
+ * Cross-references the persistent [IOSStateStore] with iOS's
  * `BGTaskScheduler.getPendingTaskRequests` to produce [ScheduledTask]
  * snapshots. Best-effort — see plan §iOS step 6 for the state mapping.
  */
-internal class IosScheduledTaskQuery(private val state: IosStateStore) {
+internal class IOSScheduledTaskQuery(private val state: IOSStateStore) {
 
     suspend fun snapshot(): List<ScheduledTask> {
         val pending: Map<String, BGTaskRequest> = pendingByIdentifier()
@@ -24,8 +24,8 @@ internal class IosScheduledTaskQuery(private val state: IosStateStore) {
             val active = state.readActive(id)
             if (!active) return@mapNotNull null
             val kind = when (state.readKind(id)) {
-                IosStateStore.Kind.OneShot -> ScheduledTask.Kind.OneTime
-                IosStateStore.Kind.Periodic -> ScheduledTask.Kind.Periodic
+                IOSStateStore.Kind.OneShot -> ScheduledTask.Kind.OneTime
+                IOSStateStore.Kind.Periodic -> ScheduledTask.Kind.Periodic
                 null -> return@mapNotNull null
             }
             val attempt = state.readAttempt(id)

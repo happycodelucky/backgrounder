@@ -51,6 +51,22 @@ K2 only. No K1 fallback.
 - 4-space indent, 120-col max, trailing commas on multi-line.
 - ktlint + detekt must pass.
 
+**Apple platform names — preserve their casing.** `iOS`, `macOS`, `tvOS`, `watchOS`, `iPadOS`, `visionOS` are the canonical spellings; never lowercase the trailing acronym in identifiers, file names, types, packages, or comments. The standard Kotlin convention of camel-casing acronyms (`HtmlParser`, not `HTMLParser`) does **not** apply to these — they're Apple platform brand names and we keep them recognisable.
+
+| Wrong                  | Right                  |
+| ---------------------- | ---------------------- |
+| `IosCoroutineBridge`   | `IOSCoroutineBridge`   |
+| `BackgrounderIos`      | `BackgrounderIOS`      |
+| `MacosScheduler`       | `MacOSScheduler`       |
+| `TvosWidget`           | `TvOSWidget`           |
+| `iosBackgrounderModule`| `iOSBackgrounderModule`|
+
+Allowed exceptions:
+- **Identifiers we don't own** — `applyDefaultHierarchyTemplate { withIos() / withMacos() / withTvos() / withWatchos() }`, the JetBrains-supplied source-set names (`iosMain` / `macosMain`), and the K/N target names (`iosArm64`, `macosArm64`, etc.). The spelling is fixed by JetBrains; we follow what the tool requires.
+- **Package names** — Kotlin / Java packages are conventionally all-lowercase across the entire ecosystem (`dev.backgrounder.ios`, not `dev.backgrounder.iOS`). The casing rule applies inside types and identifiers within those packages, not to package segments themselves.
+
+Everything else we author — classes, files, top-level functions, top-level `val`s, comments, KDoc — follows the casing-preserving rule.
+
 **Concurrency:**
 
 - `kotlinx.coroutines` only. Every `CoroutineScope` has a clear owner with a defined cancellation lifecycle.
@@ -70,9 +86,9 @@ K2 only. No K1 fallback.
   /src/iosMain
   /src/macosMain
   /src/wasmJsMain     stretch
-/iosApp               Xcode project, native SwiftUI, consumes /shared via SPM
+/iOSApp               Xcode project, native SwiftUI, consumes /shared via SPM
 /androidApp           Android entrypoint, native Jetpack Compose UI
-/macosApp             macOS desktop, native SwiftUI/AppKit
+/macOSApp             macOS desktop, native SwiftUI/AppKit
 /webApp               native web (stretch)
 ```
 
@@ -250,7 +266,7 @@ We use **Touchlab's KMMBridge** to publish the iOS framework. **CocoaPods is for
 - Don't vendor `XCFramework` zips into the iOS repo. Everything flows through Maven + SPM.
 - `Package.swift` is generated. Don't hand-edit.
 
-**Local development override:** the iOS app supports a local SPM path pointing at the Gradle build output. Run `./gradlew :shared:assembleXCFramework`, then Xcode picks up changes without a publish step. The path override is documented in `iosApp/README.md`.
+**Local development override:** the iOS app supports a local SPM path pointing at the Gradle build output. Run `./gradlew :shared:assembleXCFramework`, then Xcode picks up changes without a publish step. The path override is documented in `iOSApp/README.md`.
 
 ---
 

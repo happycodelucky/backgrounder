@@ -12,7 +12,7 @@ import kotlin.time.Duration
  *
  * This module is the pure math; the resubmit lives in [BGTaskBackedScheduler].
  */
-internal object IosBackoffEmulation {
+internal object IOSBackoffEmulation {
 
     /** Returns the next `earliestBeginDate` (epoch millis) for this attempt. */
     fun nextRunEpochMs(policy: BackoffPolicy, attempt: Int): Long {

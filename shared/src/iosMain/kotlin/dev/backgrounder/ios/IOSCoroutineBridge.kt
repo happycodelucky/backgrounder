@@ -31,17 +31,17 @@ import platform.BackgroundTasks.BGAppRefreshTask
  *
  * Lifecycle of one fire:
  *  1. OS calls the registered closure with a [BGTask].
- *  2. We read attempt + input from [IosStateStore] under the per-id [Mutex].
+ *  2. We read attempt + input from [IOSStateStore] under the per-id [Mutex].
  *  3. We launch a coroutine that calls the worker.
  *  4. The worker returns a [WorkResult]; the bridge applies it via
  *     [applyResult] (which may resubmit, persist, mark completed).
  *  5. If iOS expires before completion, the expiration handler cancels
  *     the job and reports `setTaskCompletedSuccess(false)`.
  */
-internal class IosCoroutineBridge(
+internal class IOSCoroutineBridge(
     private val registry: WorkerRegistry,
-    private val state: IosStateStore,
-    private val mutexes: IosTaskMutexes,
+    private val state: IOSStateStore,
+    private val mutexes: IOSTaskMutexes,
     private val eventListener: BackgrounderEventListener,
     private val applyResult: suspend (BGTask, TaskId, Int, WorkResult) -> Unit,
 ) {

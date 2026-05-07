@@ -10,7 +10,7 @@ import kotlin.native.ObjCName
  * Platform actuals:
  * - Android: `WorkManagerScheduler` (backed by Jetpack `WorkManager`).
  * - iOS:     `BGTaskBackedScheduler` (backed by `BGTaskScheduler`).
- * - macOS:   `NsBackgroundActivityBackedScheduler` (backed by Foundation's
+ * - macOS:   `NSBackgroundActivityBackedScheduler` (backed by Foundation's
  *            `NSBackgroundActivityScheduler`).
  *
  * Get the platform's instance from Koin (`get<Scheduler>()`). Most methods are

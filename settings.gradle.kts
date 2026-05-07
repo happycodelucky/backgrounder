@@ -2,7 +2,7 @@
  * Backgrounder — KMP background work scheduling library.
  *
  * /shared is the only subproject in v1: the headless KMP module that contains
- * all business logic. Platform apps (androidApp, iosApp, macosApp) live outside
+ * all business logic. Platform apps (androidApp, iOSApp, macOSApp) live outside
  * this Gradle build and consume /shared via KMMBridge → Maven → SPM (CLAUDE.md §9).
  */
 

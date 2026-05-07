@@ -2,7 +2,7 @@ package dev.backgrounder
 
 import co.touchlab.kermit.Logger
 import dev.backgrounder.ios.BGTaskHandlerRegistration
-import dev.backgrounder.ios.IosEphemeralSweep
+import dev.backgrounder.ios.IOSEphemeralSweep
 import org.koin.mp.KoinPlatform
 
 private val log = Logger.withTag("Backgrounder")
@@ -17,10 +17,10 @@ internal actual fun platformRegisterHandlers() {
     val koin = runCatching { KoinPlatform.getKoin() }.getOrElse {
         error(
             "Backgrounder.registerHandlers() requires Koin to be started. " +
-                "Call startKoin { modules(backgrounderCommonModule, backgrounderIosModule, ...) } first.",
+                "Call startKoin { modules(backgrounderCommonModule, backgrounderIOSModule, ...) } first.",
         )
     }
-    koin.get<IosEphemeralSweep>().run()
+    koin.get<IOSEphemeralSweep>().run()
     koin.get<BGTaskHandlerRegistration>().run()
     log.i { "registerHandlers: ephemeral sweep + BGTaskScheduler registration + resurrection complete" }
 }

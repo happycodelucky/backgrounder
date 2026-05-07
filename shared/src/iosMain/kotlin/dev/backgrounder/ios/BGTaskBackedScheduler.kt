@@ -30,12 +30,12 @@ import platform.Foundation.dateWithTimeIntervalSinceNow
  * iOS [Scheduler] backed by `BGTaskScheduler`.
  *
  * Periodic semantics are library-emulated — see plan §"iOS implementation"
- * step 2 (state machine). Retry/backoff is also emulated via [IosStateStore]
- * and [IosBackoffEmulation].
+ * step 2 (state machine). Retry/backoff is also emulated via [IOSStateStore]
+ * and [IOSBackoffEmulation].
  */
 internal class BGTaskBackedScheduler(
-    private val state: IosStateStore,
-    private val mutexes: IosTaskMutexes,
+    private val state: IOSStateStore,
+    private val mutexes: IOSTaskMutexes,
     private val ephemeral: EphemeralRegistry,
     private val eventListener: BackgrounderEventListener,
 ) : Scheduler {
@@ -49,8 +49,8 @@ internal class BGTaskBackedScheduler(
             val active = state.readActive(taskId)
 
             when (val kind = state.readKind(taskId)) {
-                IosStateStore.Kind.OneShot -> handleOneShotResult(task, taskId, attempt, result, active)
-                IosStateStore.Kind.Periodic -> handlePeriodicResult(task, taskId, attempt, result, active)
+                IOSStateStore.Kind.OneShot -> handleOneShotResult(task, taskId, attempt, result, active)
+                IOSStateStore.Kind.Periodic -> handlePeriodicResult(task, taskId, attempt, result, active)
                 null -> {
                     log.w { "applyResult for unknown task id $taskId; marking iOS task complete" }
                     runCatching { task.setTaskCompletedWithSuccess(result is WorkResult.Success) }
@@ -81,7 +81,7 @@ internal class BGTaskBackedScheduler(
                 }
                 val backoff = backoffPolicyForRetry(taskId)
                 val nextAttempt = attempt + 1
-                if (IosBackoffEmulation.shouldGiveUp(backoff, nextAttempt)) {
+                if (IOSBackoffEmulation.shouldGiveUp(backoff, nextAttempt)) {
                     log.w { "$taskId reached maxAttempts(${backoff.maxAttempts}); converting to Failure" }
                     state.setActive(taskId, false)
                     state.clear(taskId)
@@ -90,7 +90,7 @@ internal class BGTaskBackedScheduler(
                     return
                 }
                 state.setAttempt(taskId, nextAttempt)
-                val nextRun = IosBackoffEmulation.nextRunEpochMs(backoff, nextAttempt)
+                val nextRun = IOSBackoffEmulation.nextRunEpochMs(backoff, nextAttempt)
                 state.setNextRunEpochMs(taskId, nextRun)
                 resubmit(taskId, nextRun)
                 runCatching { task.setTaskCompletedWithSuccess(true) }
@@ -127,7 +127,7 @@ internal class BGTaskBackedScheduler(
             WorkResult.Retry -> {
                 val backoff = backoffPolicyForRetry(taskId)
                 val nextAttempt = attempt + 1
-                if (IosBackoffEmulation.shouldGiveUp(backoff, nextAttempt)) {
+                if (IOSBackoffEmulation.shouldGiveUp(backoff, nextAttempt)) {
                     log.w {
                         "$taskId periodic exhausted maxAttempts(${backoff.maxAttempts}); " +
                             "treating as Failure and resuming regular cadence"
@@ -140,7 +140,7 @@ internal class BGTaskBackedScheduler(
                     return
                 }
                 state.setAttempt(taskId, nextAttempt)
-                val nextRun = IosBackoffEmulation.nextRunEpochMs(backoff, nextAttempt)
+                val nextRun = IOSBackoffEmulation.nextRunEpochMs(backoff, nextAttempt)
                 state.setNextRunEpochMs(taskId, nextRun)
                 resubmit(taskId, nextRun)
                 runCatching { task.setTaskCompletedWithSuccess(true) }
@@ -195,10 +195,10 @@ internal class BGTaskBackedScheduler(
     }
 
     private fun scheduleOneTime(request: WorkRequest.OneTime): ScheduleOutcome {
-        val nextRun = IosBackoffEmulation.epochMillisAt(request.initialDelay)
+        val nextRun = IOSBackoffEmulation.epochMillisAt(request.initialDelay)
         state.writeOnSchedule(
             taskId = request.taskId,
-            kind = IosStateStore.Kind.OneShot,
+            kind = IOSStateStore.Kind.OneShot,
             input = request.input,
             ephemeral = request.ephemeral,
             intervalMs = null,
@@ -215,7 +215,7 @@ internal class BGTaskBackedScheduler(
         val nextRun = Clock.System.now().toEpochMilliseconds() + request.interval.inWholeMilliseconds
         state.writeOnSchedule(
             taskId = request.taskId,
-            kind = IosStateStore.Kind.Periodic,
+            kind = IOSStateStore.Kind.Periodic,
             input = request.input,
             ephemeral = request.ephemeral,
             intervalMs = request.interval.inWholeMilliseconds,
@@ -269,7 +269,7 @@ internal class BGTaskBackedScheduler(
         return CancelOutcome.Cancelled(pendingCleared = ids.size)
     }
 
-    override suspend fun scheduled(): List<ScheduledTask> = IosScheduledTaskQuery(state).snapshot()
+    override suspend fun scheduled(): List<ScheduledTask> = IOSScheduledTaskQuery(state).snapshot()
 
     override fun guarantees(): SchedulerGuarantees = IOS_GUARANTEES
 

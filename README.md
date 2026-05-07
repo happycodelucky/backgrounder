@@ -117,7 +117,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?,
     ) -> Bool {
         // 1. Start Koin.
-        KoinKt.doInitKoin(/* your platform module + backgrounderCommonModule + backgrounderIosModule */)
+        KoinKt.doInitKoin(/* your platform module + backgrounderCommonModule + backgrounderIOSModule */)
 
         // 2. Register every worker factory (use the Kotlin lambda directly via SKIE).
         let registry = KoinPlatformKt.getKoin().get(WorkerRegistry.self)
@@ -160,7 +160,7 @@ Background tasks don't fire automatically in the iOS Simulator. Drive them from 
 @main
 class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
-        KoinKt.doInitKoin(/* + backgrounderMacosModule */)
+        KoinKt.doInitKoin(/* + backgrounderMacOSModule */)
         let registry = KoinPlatformKt.getKoin().get(WorkerRegistry.self)
         registry.register(taskId: SyncWorker.companion.ID) { SyncWorker(repo: ...) }
         BackgrounderRuntime.shared.registerHandlers()

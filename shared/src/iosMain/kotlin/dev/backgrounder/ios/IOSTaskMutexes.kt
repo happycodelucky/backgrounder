@@ -15,7 +15,7 @@ import kotlinx.coroutines.sync.withLock
  * mid-flight. Every read-modify-write of `tasks.<id>.*` is wrapped in
  * `withMutex(taskId)` so we don't lose a state transition to a race.
  */
-internal class IosTaskMutexes {
+internal class IOSTaskMutexes {
 
     private val lock = SynchronizedObject()
     private val mutexes: MutableMap<TaskId, Mutex> = mutableMapOf()

@@ -45,7 +45,7 @@ import platform.Foundation.NSQualityOfServiceUtility
  * the BGTaskScheduler-style state store / resurrection / per-id mutex
  * machinery from iOS.
  */
-internal class NsBackgroundActivityBackedScheduler(
+internal class NSBackgroundActivityBackedScheduler(
     private val registry: WorkerRegistry,
     private val ephemeral: EphemeralRegistry,
     private val eventListener: BackgrounderEventListener,

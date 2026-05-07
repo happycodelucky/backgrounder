@@ -7,20 +7,20 @@ import com.russhwolf.settings.Settings
 import dev.backgrounder.EphemeralRegistry
 import dev.backgrounder.Scheduler
 import dev.backgrounder.di.SettingsQualifier
-import dev.backgrounder.macos.NsBackgroundActivityBackedScheduler
+import dev.backgrounder.macos.NSBackgroundActivityBackedScheduler
 import kotlinx.cinterop.ExperimentalForeignApi
 import org.koin.core.module.Module
 import org.koin.dsl.module
 import platform.Foundation.NSUserDefaults
 
-public val backgrounderMacosModule: Module = module {
+public val backgrounderMacOSModule: Module = module {
     single<Settings>(qualifier = SettingsQualifier) {
         NSUserDefaultsSettings(
             NSUserDefaults(suiteName = "dev.backgrounder.shared"),
         )
     }
     single<Scheduler> {
-        NsBackgroundActivityBackedScheduler(
+        NSBackgroundActivityBackedScheduler(
             registry = get(),
             ephemeral = get<EphemeralRegistry>(),
             eventListener = get(),
