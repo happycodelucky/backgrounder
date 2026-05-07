@@ -29,6 +29,7 @@ import kotlin.native.ObjCName
  * - [markReady] is a no-op (no JobScheduler-fires-during-init race on Apple).
  */
 @OptIn(ExperimentalObjCName::class)
+@ObjCName(swiftName = "BackgrounderRuntime")
 public object Backgrounder {
 
     /**

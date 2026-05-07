@@ -1,3 +1,5 @@
+@file:Suppress("UnstableApiUsage")
+
 /*
  * Backgrounder — :shared module.
  *
@@ -9,9 +11,6 @@
 
 import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-import org.jetbrains.kotlin.gradle.plugin.KotlinSourceSetTree
-
-@file:Suppress("UnstableApiUsage")
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
@@ -40,6 +39,8 @@ kotlin {
         target.binaries.framework {
             baseName = "Backgrounder"
             isStatic = true
+            // Pin the bundle id so SKIE doesn't fall back to the framework name.
+            binaryOption("bundleId", "dev.backgrounder.shared")
             // CLAUDE.md §8: SKIE wraps the framework export.
         }
     }
@@ -47,7 +48,7 @@ kotlin {
     // --- Android target (CLAUDE.md §1, §4) ----------------------------------
     // Use the new com.android.kotlin.multiplatform.library plugin's android {} block.
     @OptIn(ExperimentalKotlinGradlePluginApi::class)
-    androidLibrary {
+    android {
         namespace = "dev.backgrounder"
         compileSdk = libs.versions.android.compile.sdk.get().toInt()
         minSdk = libs.versions.android.min.sdk.get().toInt()

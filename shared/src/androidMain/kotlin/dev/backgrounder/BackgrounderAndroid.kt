@@ -1,13 +1,43 @@
 package dev.backgrounder
 
+import android.app.Application
+import co.touchlab.kermit.Logger
+import dev.backgrounder.android.AndroidEphemeralReady
+import dev.backgrounder.android.AndroidEphemeralSweep
+import com.russhwolf.settings.SharedPreferencesSettings
+
+private val log = Logger.withTag("Backgrounder")
+
 internal actual fun platformAttachTo(application: Any?) {
-    // TODO(impl): EphemeralSweep — see plan §Android implementation.
+    val app = application as? Application
+        ?: error(
+            "Backgrounder.attachTo expects an Application; got ${application?.let { it::class }}. " +
+                "Call from Application.onCreate before startKoin.",
+        )
+
+    // Always reset readiness on cold start; Backgrounder.markReady() flips it true.
+    AndroidEphemeralReady.reset()
+
+    // Sweep ephemeral work *before* Koin starts. We can't read the EphemeralRegistry
+    // out of Koin yet, so build a temporary one over the same SharedPreferences the
+    // Android module will bind. This stays consistent with the post-startup view because
+    // both routes write to the same backing store.
+    val settings = SharedPreferencesSettings(
+        app.getSharedPreferences("backgrounder.prefs", android.content.Context.MODE_PRIVATE),
+    )
+    val ephemeral = EphemeralRegistry(settings)
+    AndroidEphemeralSweep(app, ephemeral).run()
+    log.i { "attachTo: ephemeral sweep complete; awaiting markReady()" }
 }
 
 internal actual fun platformRegisterHandlers() {
-    // No-op on Android (kept for API symmetry).
+    // Android: WorkManager is wired via Koin's WorkerFactory. registerHandlers exists
+    // for iOS / macOS launch-time handler registration; on Android it's a no-op except
+    // for sealing the WorkerRegistry to lock further registration.
+    log.d { "registerHandlers: no-op on Android (WorkerFactory wires through Koin)" }
 }
 
 internal actual fun platformMarkReady() {
-    // TODO(impl): set ephemeralReady AtomicBoolean.
+    AndroidEphemeralReady.markReady()
+    log.i { "markReady: ephemeral workers may now dispatch" }
 }
