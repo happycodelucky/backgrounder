@@ -116,6 +116,16 @@ kotlin {
             implementation(libs.koin.androidx.workmanager)
         }
 
+        // iOS / macOS reach into Koin's GlobalContext directly (in BackgrounderIos.kt /
+        // BackgrounderMacos.kt) to drive registerHandlers. commonMain only hides koin-core
+        // behind `implementation` scope, so platforms that touch GlobalContext directly
+        // need their own explicit dependency.
+        getByName("appleMain").dependencies {
+            implementation(project.dependencies.platform(libs.koin.bom))
+            implementation(libs.koin.core)
+            implementation(libs.multiplatform.settings.no.arg)
+        }
+
         // androidUnitTest source set is created by withHostTestBuilder above.
         // Configure its deps here.
         getByName("androidHostTest").dependencies {
@@ -123,13 +133,6 @@ kotlin {
             implementation(libs.kotlinx.coroutines.test)
             implementation(libs.androidx.work.testing)
             implementation(libs.turbine)
-        }
-
-        // appleMain holds the iOS↔macOS shared coroutine bridge and state-store
-        // patterns. Both BGTaskScheduler (iOS) and NSBackgroundActivityScheduler
-        // (macOS) compose with the same SupervisorJob-rooted scope.
-        getByName("appleMain").dependencies {
-            implementation(libs.multiplatform.settings.no.arg)
         }
     }
 }
