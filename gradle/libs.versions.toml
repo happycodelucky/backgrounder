@@ -1,0 +1,104 @@
+# =============================================================================
+# Backgrounder — single source of truth for dependency versions (CLAUDE.md §10).
+#
+# IMPORTANT (CLAUDE.md §2 / §12): before bumping any version, web-search the
+# latest stable. Versions in training data go stale fast. Stable only on `main`
+# (no EAP / RC / Beta). The Kotlin pin is bounded above by SKIE's supported
+# range — do not bump Kotlin past what SKIE supports.
+# =============================================================================
+
+[versions]
+
+# --- Toolchain --------------------------------------------------------------
+# Kotlin 2.3.20 is the highest version SKIE 0.10.11 supports. CLAUDE.md §8:
+# "If SKIE doesn't yet support a Kotlin version, we wait. Don't bump Kotlin
+# past SKIE's supported range." This pin is below the §2 nominal floor of
+# 2.3.21 by exactly that constraint.
+kotlin = "2.3.20"
+agp = "9.2.0"                  # com.android.kotlin.multiplatform.library variant (CLAUDE.md §2).
+skie = "0.10.11"               # Supports Kotlin 2.3.20.
+kmmbridge = "1.2.1"
+
+# --- Android SDK ------------------------------------------------------------
+android-compile-sdk = "36"
+android-min-sdk = "30"         # arm64-v8a only (CLAUDE.md §1).
+jvm-target = "21"              # CLAUDE.md §2.
+
+# --- Apple deployment targets ----------------------------------------------
+ios-deployment-target = "18.0"
+macos-deployment-target = "15.0"
+
+# --- kotlinx ----------------------------------------------------------------
+kotlinx-coroutines = "1.10.2"
+kotlinx-serialization = "1.10.0"
+kotlinx-datetime = "0.7.1"
+kotlinx-io = "0.9.0"
+kotlinx-collections-immutable = "0.4.0"
+kotlinx-atomicfu = "0.32.1"
+
+# --- Koin -------------------------------------------------------------------
+# Use the BOM to keep koin-core, koin-android, koin-androidx-workmanager aligned.
+koin-bom = "4.1.0"
+
+# --- AndroidX ---------------------------------------------------------------
+androidx-work = "2.11.2"
+androidx-lifecycle = "2.10.0"
+androidx-datastore = "1.2.1"
+androidx-startup = "1.3.0"
+
+# --- Other libraries --------------------------------------------------------
+multiplatform-settings = "1.3.0"
+kermit = "2.0.8"
+
+# --- Testing ----------------------------------------------------------------
+turbine = "1.2.1"
+kotest = "6.1.11"
+
+# --- Lint ------------------------------------------------------------------
+ktlint = "1.5.0"
+detekt = "1.23.7"
+
+
+[libraries]
+
+# --- kotlinx ----------------------------------------------------------------
+kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
+kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "kotlinx-coroutines" }
+kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
+kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinx-datetime" }
+kotlinx-collections-immutable = { module = "org.jetbrains.kotlinx:kotlinx-collections-immutable", version.ref = "kotlinx-collections-immutable" }
+kotlinx-atomicfu = { module = "org.jetbrains.kotlinx:atomicfu", version.ref = "kotlinx-atomicfu" }
+
+# --- Koin (versioned via koin-bom) ------------------------------------------
+koin-bom = { module = "io.insert-koin:koin-bom", version.ref = "koin-bom" }
+koin-core = { module = "io.insert-koin:koin-core" }
+koin-android = { module = "io.insert-koin:koin-android" }
+koin-androidx-workmanager = { module = "io.insert-koin:koin-androidx-workmanager" }
+koin-test = { module = "io.insert-koin:koin-test" }
+
+# --- AndroidX ---------------------------------------------------------------
+androidx-work-runtime = { module = "androidx.work:work-runtime", version.ref = "androidx-work" }
+androidx-work-testing = { module = "androidx.work:work-testing", version.ref = "androidx-work" }
+androidx-startup-runtime = { module = "androidx.startup:startup-runtime", version.ref = "androidx-startup" }
+
+# --- Other ------------------------------------------------------------------
+multiplatform-settings = { module = "com.russhwolf:multiplatform-settings", version.ref = "multiplatform-settings" }
+multiplatform-settings-no-arg = { module = "com.russhwolf:multiplatform-settings-no-arg", version.ref = "multiplatform-settings" }
+multiplatform-settings-coroutines = { module = "com.russhwolf:multiplatform-settings-coroutines", version.ref = "multiplatform-settings" }
+multiplatform-settings-test = { module = "com.russhwolf:multiplatform-settings-test", version.ref = "multiplatform-settings" }
+kermit = { module = "co.touchlab:kermit", version.ref = "kermit" }
+kermit-test = { module = "co.touchlab:kermit-test", version.ref = "kermit" }
+
+# --- Testing ----------------------------------------------------------------
+turbine = { module = "app.cash.turbine:turbine", version.ref = "turbine" }
+kotest-property = { module = "io.kotest:kotest-property", version.ref = "kotest" }
+
+
+[plugins]
+
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+android-kotlin-multiplatform-library = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
+skie = { id = "co.touchlab.skie", version.ref = "skie" }
+kmmbridge = { id = "co.touchlab.kmmbridge", version.ref = "kmmbridge" }

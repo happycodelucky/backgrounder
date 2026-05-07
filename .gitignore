@@ -1,0 +1,33 @@
+# --- Gradle ---
+.gradle
+build/
+**/build/
+
+# --- Kotlin ---
+.kotlin
+
+# --- IDE: IntelliJ / Android Studio ---
+.idea/
+*.iml
+*.ipr
+*.iws
+local.properties
+captures/
+
+# --- IDE: Xcode ---
+xcuserdata/
+*.xcworkspace/xcuserdata/
+DerivedData/
+*.xcscmblueprint
+*.xccheckout
+
+# --- macOS ---
+.DS_Store
+
+# --- Native build outputs ---
+*.framework.dSYM
+*.xcframework
+
+# --- KMMBridge transient outputs ---
+spm/
+.kmmbridge/
