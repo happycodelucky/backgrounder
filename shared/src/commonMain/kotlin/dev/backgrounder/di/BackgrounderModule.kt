@@ -28,14 +28,16 @@ import org.koin.dsl.module
  * }
  * ```
  */
-public val backgrounderCommonModule: Module = module {
-    single { WorkerRegistry() }
-    single<BackgrounderEventListener> { BackgrounderEventListener.Noop }
+public val backgrounderCommonModule: Module =
+    module {
+        single { WorkerRegistry() }
+        single<BackgrounderEventListener> { BackgrounderEventListener.Noop }
 
-    // Platform module supplies a `Settings` (NSUserDefaults / SharedPreferences).
-    single { EphemeralRegistry(get<Settings>(qualifier = SettingsQualifier)) }
-}
+        // Platform module supplies a `Settings` (NSUserDefaults / SharedPreferences).
+        single { EphemeralRegistry(get<Settings>(qualifier = SettingsQualifier)) }
+    }
 
 /** Distinguish the [Settings] used by Backgrounder from any the user defines. */
 public val SettingsQualifier: org.koin.core.qualifier.StringQualifier =
-    org.koin.core.qualifier.named("backgrounder.settings")
+    org.koin.core.qualifier
+        .named("backgrounder.settings")

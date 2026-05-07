@@ -9,7 +9,6 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class AndroidConstraintsMapperTest {
-
     @Test
     fun defaultsAreLeastRestrictive() {
         val c = WorkConstraints().toWorkManagerConstraints()

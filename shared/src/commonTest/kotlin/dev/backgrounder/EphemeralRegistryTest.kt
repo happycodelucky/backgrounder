@@ -6,7 +6,6 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class EphemeralRegistryTest {
-
     private val a = TaskId("dev.backgrounder.test.a")
     private val b = TaskId("dev.backgrounder.test.b")
     private val c = TaskId("dev.backgrounder.test.c")

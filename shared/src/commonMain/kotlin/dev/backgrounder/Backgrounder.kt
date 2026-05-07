@@ -31,7 +31,6 @@ import kotlin.native.ObjCName
 @OptIn(ExperimentalObjCName::class)
 @ObjCName(swiftName = "BackgrounderRuntime")
 public object Backgrounder {
-
     /**
      * Android-only entry point. Pass your `Application` (cast as [Any] in
      * `commonMain` — the Android actual narrows). On non-Android targets this
@@ -63,5 +62,7 @@ public object Backgrounder {
 }
 
 internal expect fun platformAttachTo(application: Any?)
+
 internal expect fun platformRegisterHandlers()
+
 internal expect fun platformMarkReady()

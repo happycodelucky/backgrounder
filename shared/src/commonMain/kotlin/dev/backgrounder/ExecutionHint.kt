@@ -14,7 +14,6 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 public sealed interface ExecutionHint {
-
     /**
      * Default. Android: regular `WorkRequest`. iOS: `BGProcessingTaskRequest`
      * (longer execution window, can require power / network).
@@ -28,7 +27,9 @@ public sealed interface ExecutionHint {
      *
      * Pick this when the work needs to start soon and is small.
      */
-    @Serializable public data class Expedited(val onQuotaExhausted: QuotaPolicy) : ExecutionHint
+    @Serializable public data class Expedited(
+        val onQuotaExhausted: QuotaPolicy,
+    ) : ExecutionHint
 }
 
 /**

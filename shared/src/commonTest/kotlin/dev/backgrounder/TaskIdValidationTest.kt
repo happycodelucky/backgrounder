@@ -5,7 +5,6 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
 class TaskIdValidationTest {
-
     @Test
     fun acceptsReverseDns() {
         assertEquals("com.example.sync", TaskId("com.example.sync").value)

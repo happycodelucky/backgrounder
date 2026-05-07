@@ -2,8 +2,8 @@
 
 package dev.backgrounder
 
-import kotlin.jvm.JvmInline
 import kotlinx.serialization.Serializable
+import kotlin.jvm.JvmInline
 
 /**
  * A stable, reverse-DNS identifier for a [BackgroundWorker] task.
@@ -22,8 +22,9 @@ import kotlinx.serialization.Serializable
  */
 @JvmInline
 @Serializable
-public value class TaskId(public val value: String) {
-
+public value class TaskId(
+    public val value: String,
+) {
     init {
         require(value.isNotEmpty() && value.length <= MAX_LENGTH) {
             "TaskId length must be 1..$MAX_LENGTH, was ${value.length}"

@@ -9,9 +9,9 @@
 
 site_name: Backgrounder
 site_description: A Kotlin Multiplatform background-work scheduler.
-site_url: https://paulbates.github.io/backgrounder/
-repo_name: paulbates/backgrounder
-repo_url: https://github.com/paulbates/backgrounder
+site_url: https://happycodelucky.github.io/backgrounder/
+repo_name: happycodelucky/backgrounder
+repo_url: https://github.com/happycodelucky/backgrounder
 edit_uri: edit/main/docs/
 copyright: Copyright &copy; 2026 Paul Bates
 
@@ -93,7 +93,7 @@ plugins:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/paulbates/backgrounder
+      link: https://github.com/happycodelucky/backgrounder
 
 # Explicit nav — never auto-discovered. Page ordering matters; this file is the truth.
 nav:

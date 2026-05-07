@@ -27,37 +27,38 @@ import platform.Foundation.NSUserDefaults
  * }
  * ```
  */
-public val backgrounderIOSModule: Module = module {
-    single<Settings>(qualifier = SettingsQualifier) {
-        NSUserDefaultsSettings(
-            NSUserDefaults(suiteName = "dev.backgrounder.shared"),
-        )
-    }
-    single { IOSStateStore(get<Settings>(qualifier = SettingsQualifier)) }
-    single { IOSTaskMutexes() }
+public val backgrounderIOSModule: Module =
+    module {
+        single<Settings>(qualifier = SettingsQualifier) {
+            NSUserDefaultsSettings(
+                NSUserDefaults(suiteName = "dev.backgrounder.shared"),
+            )
+        }
+        single { IOSStateStore(get<Settings>(qualifier = SettingsQualifier)) }
+        single { IOSTaskMutexes() }
 
-    single<BGTaskBackedScheduler> {
-        BGTaskBackedScheduler(
-            state = get(),
-            mutexes = get(),
-            ephemeral = get<EphemeralRegistry>(),
-            eventListener = get(),
-        )
-    }
-    single<Scheduler> { get<BGTaskBackedScheduler>() }
+        single<BGTaskBackedScheduler> {
+            BGTaskBackedScheduler(
+                state = get(),
+                mutexes = get(),
+                ephemeral = get<EphemeralRegistry>(),
+                eventListener = get(),
+            )
+        }
+        single<Scheduler> { get<BGTaskBackedScheduler>() }
 
-    single {
-        IOSCoroutineBridge(
-            registry = get(),
-            state = get(),
-            mutexes = get(),
-            eventListener = get(),
-            applyResult = { task, taskId, attempt, result ->
-                get<BGTaskBackedScheduler>().applyResult(task, taskId, attempt, result)
-            },
-        )
-    }
+        single {
+            IOSCoroutineBridge(
+                registry = get(),
+                state = get(),
+                mutexes = get(),
+                eventListener = get(),
+                applyResult = { task, taskId, attempt, result ->
+                    get<BGTaskBackedScheduler>().applyResult(task, taskId, attempt, result)
+                },
+            )
+        }
 
-    single { IOSEphemeralSweep(get<EphemeralRegistry>(), get<IOSStateStore>()) }
-    single { BGTaskHandlerRegistration(get(), get(), get()) }
-}
+        single { IOSEphemeralSweep(get<EphemeralRegistry>(), get<IOSStateStore>()) }
+        single { BGTaskHandlerRegistration(get(), get(), get()) }
+    }

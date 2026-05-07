@@ -6,7 +6,6 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class WorkInputSizeTest {
-
     @Test
     fun emptyInput() {
         val input = WorkInput.empty()
@@ -16,13 +15,14 @@ class WorkInputSizeTest {
 
     @Test
     fun roundTripValuesByKey() {
-        val input = WorkInput.of(
-            "a" to WorkValue.StringValue("hello"),
-            "b" to WorkValue.LongValue(42L),
-            "c" to WorkValue.DoubleValue(3.14),
-            "d" to WorkValue.BooleanValue(true),
-            "e" to WorkValue.BytesValue(byteArrayOf(1, 2, 3)),
-        )
+        val input =
+            WorkInput.of(
+                "a" to WorkValue.StringValue("hello"),
+                "b" to WorkValue.LongValue(42L),
+                "c" to WorkValue.DoubleValue(3.14),
+                "d" to WorkValue.BooleanValue(true),
+                "e" to WorkValue.BytesValue(byteArrayOf(1, 2, 3)),
+            )
         assertEquals(WorkValue.StringValue("hello"), input["a"])
         assertEquals(WorkValue.LongValue(42L), input["b"])
         assertEquals(WorkValue.DoubleValue(3.14), input["c"])
@@ -57,10 +57,11 @@ class WorkInputSizeTest {
 
     @Test
     fun jsonRoundTripPreservesValues() {
-        val input = WorkInput.of(
-            "k1" to WorkValue.StringValue("v1"),
-            "k2" to WorkValue.LongValue(7L),
-        )
+        val input =
+            WorkInput.of(
+                "k1" to WorkValue.StringValue("v1"),
+                "k2" to WorkValue.LongValue(7L),
+            )
         val json = input.toJson()
         val parsed = WorkInput.fromJson(json)
         assertEquals(input, parsed)

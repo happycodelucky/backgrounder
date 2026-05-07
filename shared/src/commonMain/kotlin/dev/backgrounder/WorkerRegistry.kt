@@ -17,20 +17,23 @@ import kotlinx.atomicfu.locks.synchronized
  * id throws.
  */
 public class WorkerRegistry {
-
     private val lock = SynchronizedObject()
     private val factories: MutableMap<TaskId, () -> BackgroundWorker> = mutableMapOf()
     private val sealed = atomic(false)
 
-    public fun register(taskId: TaskId, factory: () -> BackgroundWorker): Unit = synchronized(lock) {
-        check(!sealed.value) {
-            "WorkerRegistry has been sealed; register all workers before app launch completes."
+    public fun register(
+        taskId: TaskId,
+        factory: () -> BackgroundWorker,
+    ): Unit =
+        synchronized(lock) {
+            check(!sealed.value) {
+                "WorkerRegistry has been sealed; register all workers before app launch completes."
+            }
+            require(taskId !in factories) {
+                "WorkerRegistry: task id '$taskId' is already registered."
+            }
+            factories[taskId] = factory
         }
-        require(taskId !in factories) {
-            "WorkerRegistry: task id '$taskId' is already registered."
-        }
-        factories[taskId] = factory
-    }
 
     public fun registeredIds(): Set<TaskId> = synchronized(lock) { factories.keys.toSet() }
 
@@ -42,12 +45,15 @@ public class WorkerRegistry {
         sealed.value = true
     }
 
-    internal fun create(taskId: TaskId): BackgroundWorker = synchronized(lock) {
-        val factory = factories[taskId]
-            ?: throw NoFactoryRegisteredException(taskId)
-        factory()
-    }
+    internal fun create(taskId: TaskId): BackgroundWorker =
+        synchronized(lock) {
+            val factory =
+                factories[taskId]
+                    ?: throw NoFactoryRegisteredException(taskId)
+            factory()
+        }
 
-    public class NoFactoryRegisteredException(public val taskId: TaskId) :
-        IllegalStateException("No BackgroundWorker factory registered for task id '$taskId'")
+    public class NoFactoryRegisteredException(
+        public val taskId: TaskId,
+    ) : IllegalStateException("No BackgroundWorker factory registered for task id '$taskId'")
 }

@@ -14,14 +14,27 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 public sealed interface WorkValue {
+    @Serializable public data class StringValue(
+        val value: String,
+    ) : WorkValue
 
-    @Serializable public data class StringValue(val value: String) : WorkValue
-    @Serializable public data class LongValue(val value: Long) : WorkValue
-    @Serializable public data class DoubleValue(val value: Double) : WorkValue
-    @Serializable public data class BooleanValue(val value: Boolean) : WorkValue
-    @Serializable public data class BytesValue(val value: ByteArray) : WorkValue {
-        override fun equals(other: Any?): Boolean =
-            this === other || (other is BytesValue && value.contentEquals(other.value))
+    @Serializable public data class LongValue(
+        val value: Long,
+    ) : WorkValue
+
+    @Serializable public data class DoubleValue(
+        val value: Double,
+    ) : WorkValue
+
+    @Serializable public data class BooleanValue(
+        val value: Boolean,
+    ) : WorkValue
+
+    @Serializable public data class BytesValue(
+        val value: ByteArray,
+    ) : WorkValue {
+        override fun equals(other: Any?): Boolean = this === other || (other is BytesValue && value.contentEquals(other.value))
+
         override fun hashCode(): Int = value.contentHashCode()
     }
 }

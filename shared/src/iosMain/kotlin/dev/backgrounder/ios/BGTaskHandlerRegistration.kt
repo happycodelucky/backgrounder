@@ -5,12 +5,12 @@ package dev.backgrounder.ios
 import co.touchlab.kermit.Logger
 import dev.backgrounder.TaskId
 import dev.backgrounder.WorkerRegistry
-import kotlin.time.Clock
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.BackgroundTasks.BGProcessingTaskRequest
 import platform.BackgroundTasks.BGTask
 import platform.BackgroundTasks.BGTaskScheduler
 import platform.Foundation.NSBundle
+import kotlin.time.Clock
 
 /**
  * Backs `Backgrounder.registerHandlers()` on iOS. Run from
@@ -48,10 +48,14 @@ internal class BGTaskHandlerRegistration(
     }
 
     private fun validatePlistIdentifiers(ids: Set<TaskId>) {
-        val permitted = NSBundle.mainBundle.objectForInfoDictionaryKey(PLIST_KEY)
-            ?.let { @Suppress("UNCHECKED_CAST") (it as? List<String>) }
-            ?.toSet()
-            .orEmpty()
+        val permitted =
+            NSBundle.mainBundle
+                .objectForInfoDictionaryKey(PLIST_KEY)
+                ?.let {
+                    @Suppress("UNCHECKED_CAST")
+                    (it as? List<String>)
+                }?.toSet()
+                .orEmpty()
         if (permitted.isEmpty()) {
             log.e {
                 "Info.plist key '$PLIST_KEY' is missing or empty. " +
@@ -68,16 +72,18 @@ internal class BGTaskHandlerRegistration(
     }
 
     private fun registerOne(taskId: TaskId) {
-        val ok = BGTaskScheduler.sharedScheduler.registerForTaskWithIdentifier(
-            identifier = taskId.value,
-            usingQueue = null,
-        ) { task: BGTask? ->
-            val real = task ?: run {
-                log.e { "BGTaskScheduler launch handler called with null task for $taskId" }
-                return@registerForTaskWithIdentifier
+        val ok =
+            BGTaskScheduler.sharedScheduler.registerForTaskWithIdentifier(
+                identifier = taskId.value,
+                usingQueue = null,
+            ) { task: BGTask? ->
+                val real =
+                    task ?: run {
+                        log.e { "BGTaskScheduler launch handler called with null task for $taskId" }
+                        return@registerForTaskWithIdentifier
+                    }
+                bridge.handle(real, taskId)
             }
-            bridge.handle(real, taskId)
-        }
         if (!ok) {
             log.w { "BGTaskScheduler.register(forTaskWithIdentifier:) returned false for $taskId" }
         }
@@ -85,15 +91,17 @@ internal class BGTaskHandlerRegistration(
 
     private fun resurrectActivePeriodics() {
         val nowMs = Clock.System.now().toEpochMilliseconds()
-        state.knownTaskIds()
+        state
+            .knownTaskIds()
             .filter { state.readKind(it) == IOSStateStore.Kind.Periodic && state.readActive(it) }
             .forEach { id ->
                 val intervalMs = state.readIntervalMs(id) ?: return@forEach
                 val lastRunMs = state.readLastRunEpochMs(id) ?: nowMs
                 val nextRunMs = maxOf(nowMs, lastRunMs + intervalMs)
-                val req = BGProcessingTaskRequest(id.value).apply {
-                    earliestBeginDate = epochMsToNSDate(nextRunMs)
-                }
+                val req =
+                    BGProcessingTaskRequest(id.value).apply {
+                        earliestBeginDate = epochMsToNSDate(nextRunMs)
+                    }
                 try {
                     BGTaskScheduler.sharedScheduler.submitTaskRequest(req, error = null)
                     state.setNextRunEpochMs(id, nextRunMs)

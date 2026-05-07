@@ -3,8 +3,8 @@
 package dev.backgrounder.ios
 
 import co.touchlab.kermit.Logger
-import dev.backgrounder.BackoffPolicy
 import dev.backgrounder.BackgrounderEventListener
+import dev.backgrounder.BackoffPolicy
 import dev.backgrounder.CancelOutcome
 import dev.backgrounder.ConflictPolicy
 import dev.backgrounder.EphemeralRegistry
@@ -16,7 +16,6 @@ import dev.backgrounder.SchedulerGuarantees
 import dev.backgrounder.TaskId
 import dev.backgrounder.WorkRequest
 import dev.backgrounder.WorkResult
-import kotlin.time.Clock
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.BackgroundTasks.BGAppRefreshTaskRequest
 import platform.BackgroundTasks.BGProcessingTaskRequest
@@ -25,6 +24,7 @@ import platform.BackgroundTasks.BGTaskRequest
 import platform.BackgroundTasks.BGTaskScheduler
 import platform.Foundation.NSDate
 import platform.Foundation.dateWithTimeIntervalSinceNow
+import kotlin.time.Clock
 
 /**
  * iOS [Scheduler] backed by `BGTaskScheduler`.
@@ -39,18 +39,28 @@ internal class BGTaskBackedScheduler(
     private val ephemeral: EphemeralRegistry,
     private val eventListener: BackgrounderEventListener,
 ) : Scheduler {
-
     private val log = Logger.withTag("Backgrounder/iOS/Scheduler")
 
     /** Used by the handler bridge after a worker returns. Wired through the Koin module. */
-    internal suspend fun applyResult(task: BGTask, taskId: TaskId, attempt: Int, result: WorkResult) {
+    internal suspend fun applyResult(
+        task: BGTask,
+        taskId: TaskId,
+        attempt: Int,
+        result: WorkResult,
+    ) {
         mutexes.withMutex(taskId) {
             state.recordRun(taskId, result)
             val active = state.readActive(taskId)
 
             when (val kind = state.readKind(taskId)) {
-                IOSStateStore.Kind.OneShot -> handleOneShotResult(task, taskId, attempt, result, active)
-                IOSStateStore.Kind.Periodic -> handlePeriodicResult(task, taskId, attempt, result, active)
+                IOSStateStore.Kind.OneShot -> {
+                    handleOneShotResult(task, taskId, attempt, result, active)
+                }
+
+                IOSStateStore.Kind.Periodic -> {
+                    handlePeriodicResult(task, taskId, attempt, result, active)
+                }
+
                 null -> {
                     log.w { "applyResult for unknown task id $taskId; marking iOS task complete" }
                     runCatching { task.setTaskCompletedWithSuccess(result is WorkResult.Success) }
@@ -73,6 +83,7 @@ internal class BGTaskBackedScheduler(
                 ephemeral.remove(taskId)
                 runCatching { task.setTaskCompletedWithSuccess(result is WorkResult.Success) }
             }
+
             WorkResult.Retry -> {
                 if (!active) {
                     log.i { "$taskId one-shot Retry but active=false (cancel won the race); not resubmitting" }
@@ -110,12 +121,13 @@ internal class BGTaskBackedScheduler(
             runCatching { task.setTaskCompletedWithSuccess(result is WorkResult.Success) }
             return
         }
-        val intervalMs = state.readIntervalMs(taskId)
-            ?: run {
-                log.e { "$taskId periodic with no interval_ms; bailing out of state machine" }
-                runCatching { task.setTaskCompletedWithSuccess(false) }
-                return
-            }
+        val intervalMs =
+            state.readIntervalMs(taskId)
+                ?: run {
+                    log.e { "$taskId periodic with no interval_ms; bailing out of state machine" }
+                    runCatching { task.setTaskCompletedWithSuccess(false) }
+                    return
+                }
         when (result) {
             WorkResult.Success, is WorkResult.Failure -> {
                 state.setAttempt(taskId, 0)
@@ -124,6 +136,7 @@ internal class BGTaskBackedScheduler(
                 resubmit(taskId, nextRun)
                 runCatching { task.setTaskCompletedWithSuccess(result is WorkResult.Success) }
             }
+
             WorkResult.Retry -> {
                 val backoff = backoffPolicyForRetry(taskId)
                 val nextAttempt = attempt + 1
@@ -156,10 +169,14 @@ internal class BGTaskBackedScheduler(
      * documented in the plan; users who want `Expedited` cadence on iOS
      * shouldn't be using `WorkRequest.Periodic` since it's emulated anyway.
      */
-    private fun resubmit(taskId: TaskId, earliestEpochMs: Long) {
-        val request = BGProcessingTaskRequest(taskId.value).apply {
-            earliestBeginDate = epochMsToNSDate(earliestEpochMs)
-        }
+    private fun resubmit(
+        taskId: TaskId,
+        earliestEpochMs: Long,
+    ) {
+        val request =
+            BGProcessingTaskRequest(taskId.value).apply {
+                earliestBeginDate = epochMsToNSDate(earliestEpochMs)
+            }
         try {
             BGTaskScheduler.sharedScheduler.submitTaskRequest(request, error = null)
         } catch (t: Throwable) {
@@ -178,7 +195,10 @@ internal class BGTaskBackedScheduler(
 
     // --- Scheduler interface ------------------------------------------------
 
-    override fun schedule(request: WorkRequest, policy: ConflictPolicy): ScheduleOutcome {
+    override fun schedule(
+        request: WorkRequest,
+        policy: ConflictPolicy,
+    ): ScheduleOutcome {
         if (request.ephemeral) ephemeral.add(request.taskId)
         eventListener.onScheduled(request.taskId, request)
 
@@ -204,10 +224,11 @@ internal class BGTaskBackedScheduler(
             intervalMs = null,
             nextRunEpochMs = nextRun,
         )
-        val osRequest = newOSRequest(request.taskId, request.executionHint).apply {
-            earliestBeginDate = epochMsToNSDate(nextRun)
-            applyConstraints(request.constraints, request.executionHint)
-        }
+        val osRequest =
+            newOSRequest(request.taskId, request.executionHint).apply {
+                earliestBeginDate = epochMsToNSDate(nextRun)
+                applyConstraints(request.constraints, request.executionHint)
+            }
         return submit(osRequest, request.taskId)
     }
 
@@ -221,20 +242,28 @@ internal class BGTaskBackedScheduler(
             intervalMs = request.interval.inWholeMilliseconds,
             nextRunEpochMs = nextRun,
         )
-        val osRequest = BGProcessingTaskRequest(request.taskId.value).apply {
-            earliestBeginDate = epochMsToNSDate(nextRun)
-            applyConstraints(request.constraints, ExecutionHint.Standard)
-        }
+        val osRequest =
+            BGProcessingTaskRequest(request.taskId.value).apply {
+                earliestBeginDate = epochMsToNSDate(nextRun)
+                applyConstraints(request.constraints, ExecutionHint.Standard)
+            }
         return submit(osRequest, request.taskId)
     }
 
-    private fun newOSRequest(taskId: TaskId, hint: ExecutionHint): BGTaskRequest = when (hint) {
-        ExecutionHint.Standard -> BGProcessingTaskRequest(taskId.value)
-        is ExecutionHint.Expedited -> BGAppRefreshTaskRequest(taskId.value)
-    }
+    private fun newOSRequest(
+        taskId: TaskId,
+        hint: ExecutionHint,
+    ): BGTaskRequest =
+        when (hint) {
+            ExecutionHint.Standard -> BGProcessingTaskRequest(taskId.value)
+            is ExecutionHint.Expedited -> BGAppRefreshTaskRequest(taskId.value)
+        }
 
-    private fun submit(request: BGTaskRequest, taskId: TaskId): ScheduleOutcome {
-        return try {
+    private fun submit(
+        request: BGTaskRequest,
+        taskId: TaskId,
+    ): ScheduleOutcome =
+        try {
             BGTaskScheduler.sharedScheduler.submitTaskRequest(request, error = null)
             ScheduleOutcome.Scheduled
         } catch (t: Throwable) {
@@ -243,7 +272,6 @@ internal class BGTaskBackedScheduler(
             state.clear(taskId)
             ScheduleOutcome.Rejected("BGTaskScheduler.submit failed: ${t.message ?: t::class.simpleName}")
         }
-    }
 
     override fun cancel(taskId: TaskId): CancelOutcome {
         val known = state.readKind(taskId) != null
@@ -281,8 +309,14 @@ internal class BGTaskBackedScheduler(
         // Caller already chose the right subclass via newOSRequest. This @apply method only
         // runs when we built a BGProcessingTaskRequest.
         when (constraints.networkRequired) {
-            dev.backgrounder.NetworkRequirement.None -> requiresNetworkConnectivity = false
-            dev.backgrounder.NetworkRequirement.Any -> requiresNetworkConnectivity = true
+            dev.backgrounder.NetworkRequirement.None -> {
+                requiresNetworkConnectivity = false
+            }
+
+            dev.backgrounder.NetworkRequirement.Any -> {
+                requiresNetworkConnectivity = true
+            }
+
             dev.backgrounder.NetworkRequirement.Unmetered -> {
                 requiresNetworkConnectivity = true
                 log.w {
@@ -319,13 +353,14 @@ internal fun epochMsToNSDate(epochMs: Long): NSDate {
     return NSDate.dateWithTimeIntervalSinceNow(seconds)
 }
 
-private val IOS_GUARANTEES = SchedulerGuarantees(
-    survivesProcessDeath = true,
-    survivesReboot = true,
-    survivesForceQuit = false,
-    honoursWallClock = false,
-    supportsRetryBackoff = true,
-    cancelsInFlight = false,
-    minimumPeriodicInterval = WorkRequest.MIN_RECOMMENDED_INTERVAL,
-    maxConcurrentTasks = 1000,
-)
+private val IOS_GUARANTEES =
+    SchedulerGuarantees(
+        survivesProcessDeath = true,
+        survivesReboot = true,
+        survivesForceQuit = false,
+        honoursWallClock = false,
+        supportsRetryBackoff = true,
+        cancelsInFlight = false,
+        minimumPeriodicInterval = WorkRequest.MIN_RECOMMENDED_INTERVAL,
+        maxConcurrentTasks = 1000,
+    )

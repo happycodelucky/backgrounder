@@ -25,9 +25,10 @@ public class WorkInput private constructor(
 
     public fun toJson(): String = json.encodeToString(serializer(), this)
 
-    override fun equals(other: Any?): Boolean =
-        this === other || (other is WorkInput && map == other.map)
+    override fun equals(other: Any?): Boolean = this === other || (other is WorkInput && map == other.map)
+
     override fun hashCode(): Int = map.hashCode()
+
     override fun toString(): String = "WorkInput(${map.keys.joinToString()})"
 
     public companion object {
@@ -35,11 +36,12 @@ public class WorkInput private constructor(
 
         // Compact JSON: no pretty-printing, no defaults, sealed-class polymorphism.
         // Used both for size-validation here and as the persisted shape on iOS / macOS.
-        internal val json: Json = Json {
-            encodeDefaults = false
-            classDiscriminator = "type"
-            ignoreUnknownKeys = false
-        }
+        internal val json: Json =
+            Json {
+                encodeDefaults = false
+                classDiscriminator = "type"
+                ignoreUnknownKeys = false
+            }
 
         public fun empty(): WorkInput = WorkInput(emptyMap())
 
@@ -49,8 +51,7 @@ public class WorkInput private constructor(
          * @throws IllegalArgumentException if the serialized size exceeds
          *   [MAX_SERIALIZED_BYTES] or a key is empty.
          */
-        public fun of(vararg pairs: Pair<String, WorkValue>): WorkInput =
-            ofMap(pairs.toMap(LinkedHashMap()))
+        public fun of(vararg pairs: Pair<String, WorkValue>): WorkInput = ofMap(pairs.toMap(LinkedHashMap()))
 
         public fun ofMap(map: Map<String, WorkValue>): WorkInput {
             require(map.keys.all { it.isNotEmpty() }) { "WorkInput keys must be non-empty" }
@@ -63,7 +64,6 @@ public class WorkInput private constructor(
         }
 
         /** Parse a [WorkInput] from its serialized form. Internal: used by platform stores. */
-        internal fun fromJson(text: String): WorkInput =
-            json.decodeFromString(serializer(), text)
+        internal fun fromJson(text: String): WorkInput = json.decodeFromString(serializer(), text)
     }
 }

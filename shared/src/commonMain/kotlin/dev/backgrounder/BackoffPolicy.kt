@@ -1,8 +1,8 @@
 package dev.backgrounder
 
+import kotlinx.serialization.Serializable
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
-import kotlinx.serialization.Serializable
 
 /**
  * How a [WorkRequest] is retried after [WorkResult.Retry].
@@ -15,7 +15,6 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 public sealed interface BackoffPolicy {
-
     public val maxAttempts: Int
 
     public fun delayFor(attempt: Int): Duration
@@ -30,6 +29,7 @@ public sealed interface BackoffPolicy {
             require(initialDelay >= MIN_BACKOFF) { "initialDelay must be >= $MIN_BACKOFF" }
             require(maxAttempts in 1..MAX_MAX_ATTEMPTS) { "maxAttempts must be 1..$MAX_MAX_ATTEMPTS" }
         }
+
         override fun delayFor(attempt: Int): Duration = initialDelay * (attempt + 1)
     }
 
@@ -43,6 +43,7 @@ public sealed interface BackoffPolicy {
             require(initialDelay >= MIN_BACKOFF) { "initialDelay must be >= $MIN_BACKOFF" }
             require(maxAttempts in 1..MAX_MAX_ATTEMPTS) { "maxAttempts must be 1..$MAX_MAX_ATTEMPTS" }
         }
+
         override fun delayFor(attempt: Int): Duration {
             // Cap the shift: 1 shl 30 = ~1 billion, multiplied by 30s is well within
             // Duration's representable range. The MAX_BACKOFF clamp engages much earlier.

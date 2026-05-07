@@ -65,7 +65,7 @@ Backgrounder publishes via [KMMBridge](https://touchlab.co/kmmbridge), which pro
 
 ```swift title="Package.swift"
 // In your iOS app's Package.swift:
-.package(url: "https://github.com/paulbates/backgrounder-spm.git", from: "0.1.0"),
+.package(url: "https://github.com/happycodelucky/backgrounder-spm.git", from: "0.1.0"),
 ```
 
 Add every Backgrounder task id to `Info.plist`:

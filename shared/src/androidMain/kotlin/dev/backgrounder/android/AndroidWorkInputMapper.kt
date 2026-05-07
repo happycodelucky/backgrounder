@@ -21,22 +21,26 @@ import dev.backgrounder.WorkInput
  *    `inputData` to know which factory to invoke.
  */
 internal object AndroidWorkInputMapper {
-
     internal const val KEY_TASK_ID: String = "_backgrounder.task_id"
     internal const val KEY_INPUT_JSON: String = "_backgrounder.input_json"
     internal const val KEY_EPHEMERAL: String = "_backgrounder.ephemeral"
     internal const val KEY_MAX_ATTEMPTS: String = "_backgrounder.max_attempts"
 
-    fun toData(taskId: TaskId, input: WorkInput, ephemeral: Boolean, maxAttempts: Int): Data =
-        Data.Builder()
+    fun toData(
+        taskId: TaskId,
+        input: WorkInput,
+        ephemeral: Boolean,
+        maxAttempts: Int,
+    ): Data =
+        Data
+            .Builder()
             .putString(KEY_TASK_ID, taskId.value)
             .putString(KEY_INPUT_JSON, input.toJson())
             .putBoolean(KEY_EPHEMERAL, ephemeral)
             .putInt(KEY_MAX_ATTEMPTS, maxAttempts)
             .build()
 
-    fun readTaskId(data: Data): TaskId? =
-        data.getString(KEY_TASK_ID)?.let { TaskId(it) }
+    fun readTaskId(data: Data): TaskId? = data.getString(KEY_TASK_ID)?.let { TaskId(it) }
 
     fun readInput(data: Data): WorkInput {
         val json = data.getString(KEY_INPUT_JSON) ?: return WorkInput.empty()

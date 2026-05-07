@@ -20,7 +20,6 @@ public data class PlatformCapabilities(
      * Not enforced by the library — it's a hint for worker code to budget against.
      */
     val maxExecutionTime: Duration,
-
     /**
      * `true` if `Scheduler.cancel(taskId)` interrupts an already-running worker.
      * - Android: `true` (coroutine cancellation via `onStopped`).

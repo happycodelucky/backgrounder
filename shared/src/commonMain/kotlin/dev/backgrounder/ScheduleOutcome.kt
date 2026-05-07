@@ -18,5 +18,7 @@ public sealed interface ScheduleOutcome {
      * - Periodic interval below the Android 15-minute floor.
      * - `Backgrounder.registerHandlers` not yet called on iOS / macOS.
      */
-    public data class Rejected(val reason: String) : ScheduleOutcome
+    public data class Rejected(
+        val reason: String,
+    ) : ScheduleOutcome
 }

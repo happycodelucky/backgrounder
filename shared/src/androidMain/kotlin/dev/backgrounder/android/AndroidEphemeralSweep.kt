@@ -23,7 +23,6 @@ internal class AndroidEphemeralSweep(
     private val context: Context,
     private val ephemeral: EphemeralRegistry,
 ) {
-
     private val log = Logger.withTag("Backgrounder/EphemeralSweep")
 
     fun run() {

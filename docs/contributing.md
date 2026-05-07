@@ -2,7 +2,7 @@
 
 ## Reporting bugs
 
-Open an issue on [GitHub](https://github.com/paulbates/backgrounder/issues) with:
+Open an issue on [GitHub](https://github.com/happycodelucky/backgrounder/issues) with:
 
 - Your platform target (Android API level, iOS version, macOS version) and Kotlin/Gradle versions.
 - A minimal reproducer — ideally a `BackgroundWorker` + a `WorkRequest` + the observed behaviour.

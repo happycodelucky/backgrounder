@@ -7,7 +7,6 @@ import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 
 class BackoffPolicyTest {
-
     @Test
     fun linearGrowsLinearly() {
         val p = BackoffPolicy.Linear(initialDelay = 30.seconds, maxAttempts = 5)

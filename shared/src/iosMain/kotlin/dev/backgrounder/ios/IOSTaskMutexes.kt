@@ -16,14 +16,16 @@ import kotlinx.coroutines.sync.withLock
  * `withMutex(taskId)` so we don't lose a state transition to a race.
  */
 internal class IOSTaskMutexes {
-
     private val lock = SynchronizedObject()
     private val mutexes: MutableMap<TaskId, Mutex> = mutableMapOf()
 
-    suspend inline fun <T> withMutex(taskId: TaskId, crossinline block: suspend () -> T): T =
-        mutexFor(taskId).withLock { block() }
+    suspend inline fun <T> withMutex(
+        taskId: TaskId,
+        crossinline block: suspend () -> T,
+    ): T = mutexFor(taskId).withLock { block() }
 
-    fun mutexFor(taskId: TaskId): Mutex = synchronized(lock) {
-        mutexes.getOrPut(taskId) { Mutex() }
-    }
+    fun mutexFor(taskId: TaskId): Mutex =
+        synchronized(lock) {
+            mutexes.getOrPut(taskId) { Mutex() }
+        }
 }

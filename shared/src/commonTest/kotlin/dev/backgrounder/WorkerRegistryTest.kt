@@ -6,15 +6,15 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertNotSame
 
 class WorkerRegistryTest {
-
     private val syncId = TaskId("dev.backgrounder.test.sync")
     private val uploadId = TaskId("dev.backgrounder.test.upload")
 
     // Object expression (not a SAM lambda) so the runtime hands us a *new*
     // instance per invocation — what the registry contract requires.
-    private fun newWorker(): BackgroundWorker = object : BackgroundWorker {
-        override suspend fun execute(context: WorkerContext): WorkResult = WorkResult.Success
-    }
+    private fun newWorker(): BackgroundWorker =
+        object : BackgroundWorker {
+            override suspend fun execute(context: WorkerContext): WorkResult = WorkResult.Success
+        }
 
     @Test
     fun registerThenCreateReturnsAFreshInstance() {

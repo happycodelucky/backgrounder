@@ -13,17 +13,18 @@ import org.koin.core.module.Module
 import org.koin.dsl.module
 import platform.Foundation.NSUserDefaults
 
-public val backgrounderMacOSModule: Module = module {
-    single<Settings>(qualifier = SettingsQualifier) {
-        NSUserDefaultsSettings(
-            NSUserDefaults(suiteName = "dev.backgrounder.shared"),
-        )
+public val backgrounderMacOSModule: Module =
+    module {
+        single<Settings>(qualifier = SettingsQualifier) {
+            NSUserDefaultsSettings(
+                NSUserDefaults(suiteName = "dev.backgrounder.shared"),
+            )
+        }
+        single<Scheduler> {
+            NSBackgroundActivityBackedScheduler(
+                registry = get(),
+                ephemeral = get<EphemeralRegistry>(),
+                eventListener = get(),
+            )
+        }
     }
-    single<Scheduler> {
-        NSBackgroundActivityBackedScheduler(
-            registry = get(),
-            ephemeral = get<EphemeralRegistry>(),
-            eventListener = get(),
-        )
-    }
-}

@@ -7,7 +7,6 @@ package dev.backgrounder
  * exhaustive Swift `enum` (CLAUDE.md §8 rule 4).
  */
 public sealed interface WorkResult {
-
     /** Work completed; do not retry. */
     public data object Success : WorkResult
 
@@ -15,7 +14,9 @@ public sealed interface WorkResult {
      * Work failed permanently; do not retry. The [reason] is a short
      * human-readable diagnostic — *not* an exception payload.
      */
-    public data class Failure(val reason: String) : WorkResult
+    public data class Failure(
+        val reason: String,
+    ) : WorkResult
 
     /**
      * Transient failure; retry per the request's [BackoffPolicy]. The library

@@ -39,14 +39,14 @@ internal class RegistryDispatchWorker(
     private val registry: WorkerRegistry,
     private val eventListener: BackgrounderEventListener,
 ) : CoroutineWorker(context, params) {
-
     private val log = Logger.withTag("Backgrounder")
 
     override suspend fun doWork(): AndroidResult {
-        val taskId = AndroidWorkInputMapper.readTaskId(inputData) ?: run {
-            log.e { "RegistryDispatchWorker fired without a task id in inputData" }
-            return AndroidResult.failure()
-        }
+        val taskId =
+            AndroidWorkInputMapper.readTaskId(inputData) ?: run {
+                log.e { "RegistryDispatchWorker fired without a task id in inputData" }
+                return AndroidResult.failure()
+            }
 
         val tagged = log.withTag("Backgrounder/$taskId")
         renameThread("Backgrounder/$taskId")
@@ -62,47 +62,58 @@ internal class RegistryDispatchWorker(
                 return AndroidResult.failure()
             }
 
-            val input = runCatching { AndroidWorkInputMapper.readInput(inputData) }.getOrElse {
-                tagged.e(it) { "failed to deserialize WorkInput; failing the worker" }
-                return AndroidResult.failure()
-            }
+            val input =
+                runCatching { AndroidWorkInputMapper.readInput(inputData) }.getOrElse {
+                    tagged.e(it) { "failed to deserialize WorkInput; failing the worker" }
+                    return AndroidResult.failure()
+                }
 
-            val worker = try {
-                registry.create(taskId)
-            } catch (cause: WorkerRegistry.NoFactoryRegisteredException) {
-                tagged.e(cause) { "no factory registered; failing the worker" }
-                return AndroidResult.failure()
-            }
+            val worker =
+                try {
+                    registry.create(taskId)
+                } catch (cause: WorkerRegistry.NoFactoryRegisteredException) {
+                    tagged.e(cause) { "no factory registered; failing the worker" }
+                    return AndroidResult.failure()
+                }
 
             val attempt = runAttemptCount
             eventListener.onStarted(taskId, attempt)
             tagged.d { "execute() attempt=$attempt" }
 
-            val ctx = WorkerContext(
-                taskId = taskId,
-                attempt = attempt,
-                input = input,
-                capabilities = PlatformCapabilities(
-                    maxExecutionTime = ANDROID_EXECUTION_BUDGET,
-                    cancelsInFlight = true,
-                ),
-            )
+            val ctx =
+                WorkerContext(
+                    taskId = taskId,
+                    attempt = attempt,
+                    input = input,
+                    capabilities =
+                        PlatformCapabilities(
+                            maxExecutionTime = ANDROID_EXECUTION_BUDGET,
+                            cancelsInFlight = true,
+                        ),
+                )
 
-            val result: WorkResult = try {
-                worker.execute(ctx)
-            } catch (e: CancellationException) {
-                tagged.i { "cancelled: ${e.message}" }
-                throw e
-            } catch (t: Throwable) {
-                tagged.e(t) { "[$taskId] threw; treating as Retry" }
-                WorkResult.Retry
-            }
+            val result: WorkResult =
+                try {
+                    worker.execute(ctx)
+                } catch (e: CancellationException) {
+                    tagged.i { "cancelled: ${e.message}" }
+                    throw e
+                } catch (t: Throwable) {
+                    tagged.e(t) { "[$taskId] threw; treating as Retry" }
+                    WorkResult.Retry
+                }
 
             eventListener.onCompleted(taskId, attempt, result)
 
             return when (result) {
-                WorkResult.Success -> AndroidResult.success()
-                is WorkResult.Failure -> AndroidResult.failure()
+                WorkResult.Success -> {
+                    AndroidResult.success()
+                }
+
+                is WorkResult.Failure -> {
+                    AndroidResult.failure()
+                }
+
                 WorkResult.Retry -> {
                     val cap = AndroidWorkInputMapper.readMaxAttempts(inputData)
                     if (attempt + 1 >= cap) {

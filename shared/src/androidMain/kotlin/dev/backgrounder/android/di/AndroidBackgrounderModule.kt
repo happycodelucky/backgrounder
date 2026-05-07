@@ -35,26 +35,27 @@ import org.koin.dsl.module
  * }
  * ```
  */
-public val backgrounderAndroidModule: Module = module {
-    single<Settings>(qualifier = SettingsQualifier) {
-        SharedPreferencesSettings(
-            androidContext()
-                .getSharedPreferences("backgrounder.prefs", android.content.Context.MODE_PRIVATE),
-        )
+public val backgrounderAndroidModule: Module =
+    module {
+        single<Settings>(qualifier = SettingsQualifier) {
+            SharedPreferencesSettings(
+                androidContext()
+                    .getSharedPreferences("backgrounder.prefs", android.content.Context.MODE_PRIVATE),
+            )
+        }
+
+        single { WorkManager.getInstance(androidContext()) }
+
+        single { AndroidScheduledTaskQuery(get(), get<EphemeralRegistry>()) }
+
+        single<Scheduler> {
+            WorkManagerScheduler(
+                workManager = get(),
+                ephemeral = get(),
+                eventListener = get(),
+                scheduledTaskQuery = get(),
+            )
+        }
+
+        workerOf(::RegistryDispatchWorker)
     }
-
-    single { WorkManager.getInstance(androidContext()) }
-
-    single { AndroidScheduledTaskQuery(get(), get<EphemeralRegistry>()) }
-
-    single<Scheduler> {
-        WorkManagerScheduler(
-            workManager = get(),
-            ephemeral = get(),
-            eventListener = get(),
-            scheduledTaskQuery = get(),
-        )
-    }
-
-    workerOf(::RegistryDispatchWorker)
-}

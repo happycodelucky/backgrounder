@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # Read major.minor from the in-tree fallback literal in build.gradle.kts
+      # (the `getOrElse("X.Y.0-SNAPSHOT")` argument) and stamp the patch with
+      # the CI run number. Humans bump major/minor in build.gradle.kts; CI
+      # never writes back. Mirrors the pattern used by other repos in this org.
+      - name: Compute version
+        id: version
+        run: |
+          MAJOR_MINOR=$(grep -oE 'getOrElse\("[0-9]+\.[0-9]+' build.gradle.kts | head -1 | cut -d'"' -f2)
+          if [[ -z "$MAJOR_MINOR" ]]; then
+            echo "Could not parse major.minor from build.gradle.kts" >&2
+            exit 1
+          fi
+          VERSION="${MAJOR_MINOR}.0-ci.${GITHUB_RUN_NUMBER}"
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Computed CI version: $VERSION"
+
+      # `:shared:check` runs ktlint + every unit test on every target
+      # (iosSimulatorArm64Test, macosArm64Test, testAndroidHostTest).
+      # The XCFramework build is the KMMBridge-consumable artifact (CLAUDE.md §9).
+      - name: Build, test, and assemble XCFramework
+        run: |
+          ./gradlew :shared:check :shared:assembleBackgrounderXCFramework \
+            -Pversion=${{ steps.version.outputs.VERSION }} --no-daemon
+
+      - name: Upload XCFramework
+        uses: actions/upload-artifact@v4
+        with:
+          name: Backgrounder-${{ steps.version.outputs.VERSION }}.xcframework
+          path: shared/build/XCFrameworks/release/Backgrounder.xcframework
+          if-no-files-found: error
+
+      - name: Upload test reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-${{ steps.version.outputs.VERSION }}
+          path: |
+            shared/build/reports/tests/
+            shared/build/reports/ktlint/
+          if-no-files-found: ignore

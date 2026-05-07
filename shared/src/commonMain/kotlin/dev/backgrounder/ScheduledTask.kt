@@ -17,13 +17,10 @@ public data class ScheduledTask(
     public val taskId: TaskId,
     public val kind: Kind,
     public val state: State,
-
     /** Best-effort hint of when the platform plans to run this next. May be null. */
     public val nextRunHint: Instant?,
-
     /** Library-tracked retry attempt counter (within a cycle for periodic). */
     public val attempt: Int,
-
     public val ephemeral: Boolean,
 ) {
     public enum class Kind { OneTime, Periodic }

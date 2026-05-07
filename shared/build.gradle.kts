@@ -57,8 +57,14 @@ kotlin {
     @OptIn(ExperimentalKotlinGradlePluginApi::class)
     android {
         namespace = "dev.backgrounder"
-        compileSdk = libs.versions.android.compile.sdk.get().toInt()
-        minSdk = libs.versions.android.min.sdk.get().toInt()
+        compileSdk =
+            libs.versions.android.compile.sdk
+                .get()
+                .toInt()
+        minSdk =
+            libs.versions.android.min.sdk
+                .get()
+                .toInt()
 
         // CLAUDE.md §1: arm64-v8a only. The new KMP Android plugin doesn't wire
         // ABI filters directly; consumers' app modules pin the splits. The

@@ -21,7 +21,6 @@ import kotlin.native.ObjCName
  */
 @OptIn(ExperimentalObjCName::class)
 public interface Scheduler {
-
     /**
      * Schedule a [WorkRequest]. If a request with the same [WorkRequest.taskId]
      * is already pending, [policy] decides what happens.

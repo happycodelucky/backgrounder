@@ -7,17 +7,17 @@ import dev.backgrounder.TaskId
 import dev.backgrounder.WorkResult
 import dev.backgrounder.WorkerContext
 import dev.backgrounder.WorkerRegistry
-import kotlin.coroutines.cancellation.CancellationException
-import kotlin.time.Duration.Companion.minutes
-import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import platform.BackgroundTasks.BGTask
 import platform.BackgroundTasks.BGAppRefreshTask
+import platform.BackgroundTasks.BGTask
+import kotlin.coroutines.cancellation.CancellationException
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Drives a [BGTask] handler closure from the OS — the load-bearing piece per
@@ -45,14 +45,17 @@ internal class IOSCoroutineBridge(
     private val eventListener: BackgrounderEventListener,
     private val applyResult: suspend (BGTask, TaskId, Int, WorkResult) -> Unit,
 ) {
-
     private val log = Logger.withTag("Backgrounder/iOS")
 
-    private val scope: CoroutineScope = CoroutineScope(
-        SupervisorJob() + Dispatchers.Default + CoroutineName("Backgrounder.iOS"),
-    )
+    private val scope: CoroutineScope =
+        CoroutineScope(
+            SupervisorJob() + Dispatchers.Default + CoroutineName("Backgrounder.iOS"),
+        )
 
-    fun handle(task: BGTask, taskId: TaskId) {
+    fun handle(
+        task: BGTask,
+        taskId: TaskId,
+    ) {
         val tagged = log.withTag("Backgrounder/iOS/$taskId")
         // Snapshot attempt/input synchronously (off the main queue) before launching.
         val attempt = state.readAttempt(taskId)
@@ -62,37 +65,41 @@ internal class IOSCoroutineBridge(
 
         val capabilities = capabilitiesFor(task)
 
-        val job: Job = scope.launch {
-            mutexes.withMutex(taskId) {
-                val worker = try {
-                    registry.create(taskId)
-                } catch (e: WorkerRegistry.NoFactoryRegisteredException) {
-                    tagged.e(e) { "no factory registered; treating as Failure" }
-                    applyResult(task, taskId, attempt, WorkResult.Failure("no factory: $taskId"))
-                    return@withMutex
+        val job: Job =
+            scope.launch {
+                mutexes.withMutex(taskId) {
+                    val worker =
+                        try {
+                            registry.create(taskId)
+                        } catch (e: WorkerRegistry.NoFactoryRegisteredException) {
+                            tagged.e(e) { "no factory registered; treating as Failure" }
+                            applyResult(task, taskId, attempt, WorkResult.Failure("no factory: $taskId"))
+                            return@withMutex
+                        }
+
+                    val ctx =
+                        WorkerContext(
+                            taskId = taskId,
+                            attempt = attempt,
+                            input = input,
+                            capabilities = capabilities,
+                        )
+
+                    val result: WorkResult =
+                        try {
+                            worker.execute(ctx)
+                        } catch (e: CancellationException) {
+                            tagged.i { "cancelled (probably expiration): ${e.message}" }
+                            throw e
+                        } catch (t: Throwable) {
+                            tagged.e(t) { "execute() threw; treating as Retry" }
+                            WorkResult.Retry
+                        }
+
+                    applyResult(task, taskId, attempt, result)
+                    eventListener.onCompleted(taskId, attempt, result)
                 }
-
-                val ctx = WorkerContext(
-                    taskId = taskId,
-                    attempt = attempt,
-                    input = input,
-                    capabilities = capabilities,
-                )
-
-                val result: WorkResult = try {
-                    worker.execute(ctx)
-                } catch (e: CancellationException) {
-                    tagged.i { "cancelled (probably expiration): ${e.message}" }
-                    throw e
-                } catch (t: Throwable) {
-                    tagged.e(t) { "execute() threw; treating as Retry" }
-                    WorkResult.Retry
-                }
-
-                applyResult(task, taskId, attempt, result)
-                eventListener.onCompleted(taskId, attempt, result)
             }
-        }
 
         task.setExpirationHandler {
             tagged.w { "BGTask expired; cancelling worker" }
@@ -114,16 +121,22 @@ internal class IOSCoroutineBridge(
         }
     }
 
-    private fun capabilitiesFor(task: BGTask): PlatformCapabilities = when (task) {
-        // BGAppRefreshTask gets ~30 seconds. Other BGTask subclasses (BGProcessingTask)
-        // get "several minutes" — we report a conservative 5-minute hint.
-        is BGAppRefreshTask -> PlatformCapabilities(
-            maxExecutionTime = 30.seconds,
-            cancelsInFlight = false,
-        )
-        else -> PlatformCapabilities(
-            maxExecutionTime = 5.minutes,
-            cancelsInFlight = false,
-        )
-    }
+    private fun capabilitiesFor(task: BGTask): PlatformCapabilities =
+        when (task) {
+            // BGAppRefreshTask gets ~30 seconds. Other BGTask subclasses (BGProcessingTask)
+            // get "several minutes" — we report a conservative 5-minute hint.
+            is BGAppRefreshTask -> {
+                PlatformCapabilities(
+                    maxExecutionTime = 30.seconds,
+                    cancelsInFlight = false,
+                )
+            }
+
+            else -> {
+                PlatformCapabilities(
+                    maxExecutionTime = 5.minutes,
+                    cancelsInFlight = false,
+                )
+            }
+        }
 }

@@ -1,9 +1,9 @@
 package dev.backgrounder
 
+import kotlinx.serialization.Serializable
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
-import kotlinx.serialization.Serializable
 
 /**
  * A request to schedule background work, identified by a stable [TaskId].

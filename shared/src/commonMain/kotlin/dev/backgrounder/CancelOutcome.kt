@@ -4,7 +4,6 @@ package dev.backgrounder
  * The result of [Scheduler.cancel] / [Scheduler.cancelAll].
  */
 public sealed interface CancelOutcome {
-
     /**
      * The pending request(s) were cancelled.
      *
@@ -15,7 +14,9 @@ public sealed interface CancelOutcome {
      * see [PlatformCapabilities.cancelsInFlight] and
      * [SchedulerGuarantees.cancelsInFlight].
      */
-    public data class Cancelled(val pendingCleared: Int) : CancelOutcome
+    public data class Cancelled(
+        val pendingCleared: Int,
+    ) : CancelOutcome
 
     /** No work was registered with this id. */
     public data object NoSuchTask : CancelOutcome

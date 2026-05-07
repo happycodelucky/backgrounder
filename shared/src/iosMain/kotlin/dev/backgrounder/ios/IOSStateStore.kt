@@ -16,8 +16,9 @@ import kotlin.time.Clock
  * a single task id are serialised by [IOSTaskMutexes]; cross-task writes are
  * independent.
  */
-internal class IOSStateStore(private val settings: Settings) {
-
+internal class IOSStateStore(
+    private val settings: Settings,
+) {
     fun writeOnSchedule(
         taskId: TaskId,
         kind: Kind,
@@ -32,8 +33,11 @@ internal class IOSStateStore(private val settings: Settings) {
         settings.putBoolean(k.active, true)
         settings.putBoolean(k.ephemeral, ephemeral)
         settings.putString(k.input, input.toJson())
-        if (intervalMs != null) settings.putLong(k.intervalMs, intervalMs)
-        else settings.remove(k.intervalMs)
+        if (intervalMs != null) {
+            settings.putLong(k.intervalMs, intervalMs)
+        } else {
+            settings.remove(k.intervalMs)
+        }
         settings.putInt(k.attempt, 0)
         settings.putLong(k.nextRunEpochMs, nextRunEpochMs)
         settings.remove(k.lastResult)
@@ -71,19 +75,31 @@ internal class IOSStateStore(private val settings: Settings) {
         return if (settings.hasKey(k.lastRunEpochMs)) settings.getLong(k.lastRunEpochMs, 0L) else null
     }
 
-    fun setActive(taskId: TaskId, active: Boolean) {
+    fun setActive(
+        taskId: TaskId,
+        active: Boolean,
+    ) {
         settings.putBoolean(keys(taskId).active, active)
     }
 
-    fun setAttempt(taskId: TaskId, attempt: Int) {
+    fun setAttempt(
+        taskId: TaskId,
+        attempt: Int,
+    ) {
         settings.putInt(keys(taskId).attempt, attempt)
     }
 
-    fun setNextRunEpochMs(taskId: TaskId, epochMs: Long) {
+    fun setNextRunEpochMs(
+        taskId: TaskId,
+        epochMs: Long,
+    ) {
         settings.putLong(keys(taskId).nextRunEpochMs, epochMs)
     }
 
-    fun recordRun(taskId: TaskId, result: WorkResult) {
+    fun recordRun(
+        taskId: TaskId,
+        result: WorkResult,
+    ) {
         val k = keys(taskId)
         settings.putString(k.lastResult, result.toToken())
         settings.putLong(k.lastRunEpochMs, Clock.System.now().toEpochMilliseconds())
@@ -92,21 +108,29 @@ internal class IOSStateStore(private val settings: Settings) {
     fun clear(taskId: TaskId) {
         val k = keys(taskId)
         listOf(
-            k.schemaVersion, k.kind, k.active, k.ephemeral, k.intervalMs,
-            k.attempt, k.input, k.lastResult, k.lastRunEpochMs, k.nextRunEpochMs,
+            k.schemaVersion,
+            k.kind,
+            k.active,
+            k.ephemeral,
+            k.intervalMs,
+            k.attempt,
+            k.input,
+            k.lastResult,
+            k.lastRunEpochMs,
+            k.nextRunEpochMs,
         ).forEach(settings::remove)
     }
 
     /** Every task id with an entry — derived by scanning the schema_version key suffix. */
     fun knownTaskIds(): Set<TaskId> {
         val all = settings.keys
-        return all.asSequence()
+        return all
+            .asSequence()
             .filter { it.startsWith(PREFIX) && it.endsWith(SCHEMA_VERSION_SUFFIX) }
             .mapNotNull { key ->
                 val raw = key.removePrefix(PREFIX).removeSuffix(SCHEMA_VERSION_SUFFIX)
                 runCatching { TaskId(raw) }.getOrNull()
-            }
-            .toSet()
+            }.toSet()
     }
 
     private data class Keys(
@@ -138,7 +162,12 @@ internal class IOSStateStore(private val settings: Settings) {
         )
     }
 
-    enum class Kind(val token: String) { OneShot("oneshot"), Periodic("periodic") }
+    enum class Kind(
+        val token: String,
+    ) {
+        OneShot("oneshot"),
+        Periodic("periodic"),
+    }
 
     internal companion object {
         internal const val SCHEMA_VERSION: Int = 1
@@ -147,8 +176,9 @@ internal class IOSStateStore(private val settings: Settings) {
     }
 }
 
-private fun WorkResult.toToken(): String = when (this) {
-    WorkResult.Success -> "success"
-    is WorkResult.Failure -> "failure:$reason"
-    WorkResult.Retry -> "retry"
-}
+private fun WorkResult.toToken(): String =
+    when (this) {
+        WorkResult.Success -> "success"
+        is WorkResult.Failure -> "failure:$reason"
+        WorkResult.Retry -> "retry"
+    }

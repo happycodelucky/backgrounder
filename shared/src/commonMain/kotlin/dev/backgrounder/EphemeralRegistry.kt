@@ -15,8 +15,9 @@ import com.russhwolf.settings.Settings
  * - [clear] called once the sweep finishes.
  * - [remove] called by `Scheduler.cancel` to keep the mirror tight.
  */
-internal class EphemeralRegistry(private val settings: Settings) {
-
+internal class EphemeralRegistry(
+    private val settings: Settings,
+) {
     fun add(taskId: TaskId) {
         val current = snapshot().toMutableSet()
         if (current.add(taskId)) write(current)
@@ -30,7 +31,8 @@ internal class EphemeralRegistry(private val settings: Settings) {
     fun snapshot(): Set<TaskId> {
         val raw = settings.getStringOrNull(KEY) ?: return emptySet()
         if (raw.isEmpty()) return emptySet()
-        return raw.splitToSequence(SEPARATOR)
+        return raw
+            .splitToSequence(SEPARATOR)
             .filter { it.isNotEmpty() }
             .map { TaskId(it) }
             .toSet()

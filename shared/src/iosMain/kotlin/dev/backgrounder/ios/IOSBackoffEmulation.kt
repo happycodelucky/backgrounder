@@ -13,17 +13,21 @@ import kotlin.time.Duration
  * This module is the pure math; the resubmit lives in [BGTaskBackedScheduler].
  */
 internal object IOSBackoffEmulation {
-
     /** Returns the next `earliestBeginDate` (epoch millis) for this attempt. */
-    fun nextRunEpochMs(policy: BackoffPolicy, attempt: Int): Long {
+    fun nextRunEpochMs(
+        policy: BackoffPolicy,
+        attempt: Int,
+    ): Long {
         val delay = policy.delayFor(attempt)
         return Clock.System.now().toEpochMilliseconds() + delay.inWholeMilliseconds
     }
 
     /** True if [attempt] meets or exceeds the policy's cap. */
-    fun shouldGiveUp(policy: BackoffPolicy, attempt: Int): Boolean = attempt >= policy.maxAttempts
+    fun shouldGiveUp(
+        policy: BackoffPolicy,
+        attempt: Int,
+    ): Boolean = attempt >= policy.maxAttempts
 
     /** Shorthand: epoch millis for "now + d". */
-    fun epochMillisAt(d: Duration): Long =
-        Clock.System.now().toEpochMilliseconds() + d.inWholeMilliseconds
+    fun epochMillisAt(d: Duration): Long = Clock.System.now().toEpochMilliseconds() + d.inWholeMilliseconds
 }
