@@ -1,6 +1,8 @@
 package dev.backgrounder
 
 import com.russhwolf.settings.Settings
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
 
 /**
  * The persistent set of [TaskId]s that opted into the cold-launch sweep.
@@ -18,17 +20,34 @@ import com.russhwolf.settings.Settings
 internal class EphemeralRegistry(
     private val settings: Settings,
 ) {
+    // Guards every read-modify-write on the underlying single-key store. Without
+    // this, two concurrent `add` calls can both read the pre-add snapshot and
+    // race on the write — the loser's id is lost. Critical sections are short
+    // and never call into suspend code, so a non-suspending lock is correct.
+    // MUST NOT call suspend functions inside this block.
+    private val lock = SynchronizedObject()
+
     fun add(taskId: TaskId) {
-        val current = snapshot().toMutableSet()
-        if (current.add(taskId)) write(current)
+        synchronized(lock) {
+            val current = snapshotInternal().toMutableSet()
+            if (current.add(taskId)) write(current)
+        }
     }
 
     fun remove(taskId: TaskId) {
-        val current = snapshot().toMutableSet()
-        if (current.remove(taskId)) write(current)
+        synchronized(lock) {
+            val current = snapshotInternal().toMutableSet()
+            if (current.remove(taskId)) write(current)
+        }
     }
 
-    fun snapshot(): Set<TaskId> {
+    fun snapshot(): Set<TaskId> = synchronized(lock) { snapshotInternal() }
+
+    fun clear() {
+        synchronized(lock) { settings.remove(KEY) }
+    }
+
+    private fun snapshotInternal(): Set<TaskId> {
         val raw = settings.getStringOrNull(KEY) ?: return emptySet()
         if (raw.isEmpty()) return emptySet()
         return raw
@@ -36,10 +55,6 @@ internal class EphemeralRegistry(
             .filter { it.isNotEmpty() }
             .map { TaskId(it) }
             .toSet()
-    }
-
-    fun clear() {
-        settings.remove(KEY)
     }
 
     private fun write(ids: Set<TaskId>) {

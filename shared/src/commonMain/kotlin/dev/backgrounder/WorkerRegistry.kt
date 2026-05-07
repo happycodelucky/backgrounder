@@ -17,6 +17,7 @@ import kotlinx.atomicfu.locks.synchronized
  * id throws.
  */
 public class WorkerRegistry {
+    // MUST NOT call suspend functions inside this block — see CLAUDE.md §3.
     private val lock = SynchronizedObject()
     private val factories: MutableMap<TaskId, () -> BackgroundWorker> = mutableMapOf()
     private val sealed = atomic(false)

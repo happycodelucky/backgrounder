@@ -19,7 +19,13 @@ public sealed interface BackoffPolicy {
 
     public fun delayFor(attempt: Int): Duration
 
-    /** Linear: `delay = initialDelay + initialDelay * attempt`. */
+    /**
+     * Linear: `delay = initialDelay × (attempt + 1)`. So `delayFor(0) = initialDelay`,
+     * `delayFor(1) = 2 × initialDelay`, `delayFor(2) = 3 × initialDelay`, …
+     *
+     * `attempt` is 0-indexed, matching Android `WorkManager`'s `runAttemptCount`
+     * (the count of *prior* failed runs).
+     */
     @Serializable
     public data class Linear(
         val initialDelay: Duration = 30.seconds,
@@ -33,7 +39,13 @@ public sealed interface BackoffPolicy {
         override fun delayFor(attempt: Int): Duration = initialDelay * (attempt + 1)
     }
 
-    /** Exponential: `delay = initialDelay * 2^attempt`, capped at [MAX_BACKOFF]. */
+    /**
+     * Exponential: `delay = initialDelay × 2^attempt`, capped at [MAX_BACKOFF].
+     * `delayFor(0) = initialDelay`, `delayFor(1) = 2 × initialDelay`,
+     * `delayFor(2) = 4 × initialDelay`, …
+     *
+     * `attempt` is 0-indexed (see [Linear]).
+     */
     @Serializable
     public data class Exponential(
         val initialDelay: Duration = 30.seconds,

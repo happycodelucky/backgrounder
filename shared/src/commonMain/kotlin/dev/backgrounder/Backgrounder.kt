@@ -27,6 +27,9 @@ import kotlin.native.ObjCName
  *   id in [WorkerRegistry.registeredIds], and resurrects any active periodic
  *   tasks. Must run before the launch method returns.
  * - [markReady] is a no-op (no JobScheduler-fires-during-init race on Apple).
+ *
+ * `@OptIn(ExperimentalObjCName::class)`: standard Swift-rename annotation;
+ * stable in practice and required by SKIE for boundary refinement.
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName(swiftName = "BackgrounderRuntime")

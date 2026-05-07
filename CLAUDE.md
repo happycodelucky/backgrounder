@@ -72,7 +72,10 @@ Everything else we author — classes, files, top-level functions, top-level `va
 - `kotlinx.coroutines` only. Every `CoroutineScope` has a clear owner with a defined cancellation lifecycle.
 - No `GlobalScope`. Ever.
 - `Flow`/`StateFlow`/`SharedFlow` over callbacks and `LiveData`.
-- For shared mutable state: actor-style coroutine or `Mutex`. Never `synchronized`.
+- For shared mutable state guarded **across `suspend` boundaries**, use `kotlinx.coroutines.sync.Mutex` or actor-style coroutines.
+- For short, **non-suspending** critical sections (e.g., a couple of map operations), use `kotlinx.atomicfu.locks.synchronized` with a `kotlinx.atomicfu.locks.SynchronizedObject`. It's the KMP-portable equivalent of a JVM monitor — lowers to a `synchronized` block on JVM, an internal lock on K/N. Single-flag state belongs in `kotlinx.atomicfu.atomic` instead.
+- **Never** `kotlin.synchronized` (JVM-only), `java.util.concurrent.locks.*`, `@Synchronized`, `volatile`, or `Object.wait/notify`. None are portable to K/N or wasm.
+- A `kotlinx.atomicfu.locks.synchronized` block must not call `suspend` functions. If you reach for one and the body needs to suspend, you wanted a `Mutex`. Leave a `// MUST NOT call suspend functions inside this block` comment on the lock declaration.
 - New memory model is the only one we support. No legacy freezing logic.
 
 ---
@@ -310,6 +313,8 @@ When starting any task:
 - No `GlobalScope`.
 - No `!!`.
 - No `java.time` in `commonMain`.
+- No `kotlin.synchronized`, `@Synchronized`, `java.util.concurrent.locks.*`, or `volatile` — only `kotlinx.atomicfu.locks.synchronized` (non-suspending) and `kotlinx.coroutines.sync.Mutex` (suspending).
+- No suspend calls inside a `kotlinx.atomicfu.locks.synchronized` block.
 - No EAP/RC/beta on `main`.
 - No callback-based public APIs in `commonMain`.
 - No UI dependencies in `/shared`.

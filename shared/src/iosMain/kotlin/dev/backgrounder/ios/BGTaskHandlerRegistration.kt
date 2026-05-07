@@ -1,3 +1,4 @@
+// ExperimentalForeignApi: required for cinterop FFI types. Stable in practice.
 @file:OptIn(ExperimentalForeignApi::class)
 
 package dev.backgrounder.ios
@@ -52,8 +53,9 @@ internal class BGTaskHandlerRegistration(
             NSBundle.mainBundle
                 .objectForInfoDictionaryKey(PLIST_KEY)
                 ?.let {
-                    @Suppress("UNCHECKED_CAST")
-                    (it as? List<String>)
+                    // K/N erases element types — `as? List<String>` succeeds on any
+                    // List<*>. filterIsInstance drops non-String entries safely.
+                    (it as? List<*>)?.filterIsInstance<String>()
                 }?.toSet()
                 .orEmpty()
         if (permitted.isEmpty()) {
@@ -102,12 +104,15 @@ internal class BGTaskHandlerRegistration(
                     BGProcessingTaskRequest(id.value).apply {
                         earliestBeginDate = epochMsToNSDate(nextRunMs)
                     }
-                try {
-                    BGTaskScheduler.sharedScheduler.submitTaskRequest(req, error = null)
-                    state.setNextRunEpochMs(id, nextRunMs)
-                    log.i { "resurrected periodic $id; next run at ${nextRunMs}ms" }
-                } catch (t: Throwable) {
-                    log.e(t) { "failed to resurrect periodic $id" }
+                when (val outcome = submitBGTaskRequest(req)) {
+                    BGSubmitResult.Success -> {
+                        state.setNextRunEpochMs(id, nextRunMs)
+                        log.i { "resurrected periodic $id; next run at ${nextRunMs}ms" }
+                    }
+
+                    is BGSubmitResult.Failure -> {
+                        log.e { "failed to resurrect periodic $id: ${outcome.message}" }
+                    }
                 }
             }
     }

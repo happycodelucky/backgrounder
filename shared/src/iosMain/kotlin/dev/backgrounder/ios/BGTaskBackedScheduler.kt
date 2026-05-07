@@ -1,3 +1,5 @@
+// ExperimentalForeignApi: required for cinterop FFI types (NSDate, BGTask, etc.).
+// The cinterop surface has been stable across multiple Kotlin releases.
 @file:OptIn(ExperimentalForeignApi::class)
 
 package dev.backgrounder.ios
@@ -63,6 +65,7 @@ internal class BGTaskBackedScheduler(
 
                 null -> {
                     log.w { "applyResult for unknown task id $taskId; marking iOS task complete" }
+                    mutexes.forget(taskId)
                     runCatching { task.setTaskCompletedWithSuccess(result is WorkResult.Success) }
                 }
             }
@@ -81,6 +84,7 @@ internal class BGTaskBackedScheduler(
                 state.setActive(taskId, false)
                 state.clear(taskId)
                 ephemeral.remove(taskId)
+                mutexes.forget(taskId)
                 runCatching { task.setTaskCompletedWithSuccess(result is WorkResult.Success) }
             }
 
@@ -97,11 +101,15 @@ internal class BGTaskBackedScheduler(
                     state.setActive(taskId, false)
                     state.clear(taskId)
                     ephemeral.remove(taskId)
+                    mutexes.forget(taskId)
                     runCatching { task.setTaskCompletedWithSuccess(false) }
                     return
                 }
                 state.setAttempt(taskId, nextAttempt)
-                val nextRun = IOSBackoffEmulation.nextRunEpochMs(backoff, nextAttempt)
+                // delayFor(attempt) — the attempt that *just failed* — matches Android's
+                // WorkManager backoff curve: first retry waits `initialDelay`, second waits
+                // `2 * initialDelay` (exponential) or `2 * initialDelay` (linear), etc.
+                val nextRun = IOSBackoffEmulation.nextRunEpochMs(backoff, attempt)
                 state.setNextRunEpochMs(taskId, nextRun)
                 resubmit(taskId, nextRun)
                 runCatching { task.setTaskCompletedWithSuccess(true) }
@@ -153,7 +161,8 @@ internal class BGTaskBackedScheduler(
                     return
                 }
                 state.setAttempt(taskId, nextAttempt)
-                val nextRun = IOSBackoffEmulation.nextRunEpochMs(backoff, nextAttempt)
+                // delayFor(attempt) — see one-shot path for rationale.
+                val nextRun = IOSBackoffEmulation.nextRunEpochMs(backoff, attempt)
                 state.setNextRunEpochMs(taskId, nextRun)
                 resubmit(taskId, nextRun)
                 runCatching { task.setTaskCompletedWithSuccess(true) }
@@ -177,10 +186,9 @@ internal class BGTaskBackedScheduler(
             BGProcessingTaskRequest(taskId.value).apply {
                 earliestBeginDate = epochMsToNSDate(earliestEpochMs)
             }
-        try {
-            BGTaskScheduler.sharedScheduler.submitTaskRequest(request, error = null)
-        } catch (t: Throwable) {
-            log.e(t) { "[$taskId] resubmit failed" }
+        when (val outcome = submitBGTaskRequest(request)) {
+            BGSubmitResult.Success -> Unit
+            is BGSubmitResult.Failure -> log.e { "[$taskId] resubmit failed: ${outcome.message}" }
         }
     }
 
@@ -263,14 +271,17 @@ internal class BGTaskBackedScheduler(
         request: BGTaskRequest,
         taskId: TaskId,
     ): ScheduleOutcome =
-        try {
-            BGTaskScheduler.sharedScheduler.submitTaskRequest(request, error = null)
-            ScheduleOutcome.Scheduled
-        } catch (t: Throwable) {
-            log.e(t) { "submit failed for $taskId" }
-            // Wipe state so we don't leave a phantom active record.
-            state.clear(taskId)
-            ScheduleOutcome.Rejected("BGTaskScheduler.submit failed: ${t.message ?: t::class.simpleName}")
+        when (val outcome = submitBGTaskRequest(request)) {
+            BGSubmitResult.Success -> {
+                ScheduleOutcome.Scheduled
+            }
+
+            is BGSubmitResult.Failure -> {
+                log.e { "submit failed for $taskId: ${outcome.message}" }
+                // Wipe state so we don't leave a phantom active record.
+                state.clear(taskId)
+                ScheduleOutcome.Rejected("BGTaskScheduler.submit failed: ${outcome.message}")
+            }
         }
 
     override fun cancel(taskId: TaskId): CancelOutcome {
@@ -279,6 +290,7 @@ internal class BGTaskBackedScheduler(
         state.setActive(taskId, false)
         state.clear(taskId)
         ephemeral.remove(taskId)
+        mutexes.forget(taskId)
         eventListener.onCancelled(taskId)
         return if (known) CancelOutcome.Cancelled(pendingCleared = 1) else CancelOutcome.NoSuchTask
     }
@@ -292,8 +304,10 @@ internal class BGTaskBackedScheduler(
         ids.forEach { id ->
             BGTaskScheduler.sharedScheduler.cancelTaskRequestWithIdentifier(id.value)
             state.clear(id)
+            eventListener.onCancelled(id)
         }
         ephemeral.clear()
+        mutexes.forgetAll()
         return CancelOutcome.Cancelled(pendingCleared = ids.size)
     }
 

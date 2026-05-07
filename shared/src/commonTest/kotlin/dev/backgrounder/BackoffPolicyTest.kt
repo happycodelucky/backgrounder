@@ -66,4 +66,20 @@ class BackoffPolicyTest {
         assertTrue(BackoffPolicy.linear() is BackoffPolicy.Linear)
         assertTrue(BackoffPolicy.exponential() is BackoffPolicy.Exponential)
     }
+
+    /**
+     * Pins the indexing convention every platform's retry path relies on:
+     * `delayFor(0)` is the wait *before the first retry*, i.e. after the run
+     * with `attempt = 0` has just failed. iOS' `BGTaskBackedScheduler` previously
+     * called `delayFor(nextAttempt)` and produced a doubled first-retry delay
+     * vs. Android's WorkManager.
+     */
+    @Test
+    fun firstRetryWaitsInitialDelay() {
+        val initial = 30.seconds
+        val linear = BackoffPolicy.Linear(initialDelay = initial)
+        val exp = BackoffPolicy.Exponential(initialDelay = initial)
+        assertEquals(initial, linear.delayFor(0))
+        assertEquals(initial, exp.delayFor(0))
+    }
 }

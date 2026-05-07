@@ -15,12 +15,10 @@ internal actual fun platformAttachTo(application: Any?) {
 
 internal actual fun platformRegisterHandlers() {
     val koin =
-        runCatching { KoinPlatform.getKoin() }.getOrElse {
-            error(
-                "Backgrounder.registerHandlers() requires Koin to be started. " +
-                    "Call startKoin { modules(backgrounderCommonModule, backgrounderIOSModule, ...) } first.",
-            )
-        }
+        KoinPlatform.getKoinOrNull() ?: error(
+            "Backgrounder.registerHandlers() requires Koin to be started. " +
+                "Call startKoin { modules(backgrounderCommonModule, backgrounderIOSModule, ...) } first.",
+        )
     koin.get<IOSEphemeralSweep>().run()
     koin.get<BGTaskHandlerRegistration>().run()
     log.i { "registerHandlers: ephemeral sweep + BGTaskScheduler registration + resurrection complete" }

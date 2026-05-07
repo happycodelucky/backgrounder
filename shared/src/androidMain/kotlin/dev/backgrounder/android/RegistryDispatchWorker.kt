@@ -49,6 +49,10 @@ internal class RegistryDispatchWorker(
             }
 
         val tagged = log.withTag("Backgrounder/$taskId")
+        // Capture inside doWork() — the worker's runtime thread can differ from
+        // the thread Koin instantiated us on. Restoring the field-init snapshot
+        // would set the wrong name on whatever pool thread doWork actually ran on.
+        val originalThreadName = Thread.currentThread().name
         renameThread("Backgrounder/$taskId")
         try {
             val ephemeral = AndroidWorkInputMapper.readEphemeral(inputData)
@@ -128,8 +132,6 @@ internal class RegistryDispatchWorker(
             renameThread(originalThreadName)
         }
     }
-
-    private val originalThreadName: String = Thread.currentThread().name
 
     private fun renameThread(name: String) {
         runCatching { Thread.currentThread().name = name }
