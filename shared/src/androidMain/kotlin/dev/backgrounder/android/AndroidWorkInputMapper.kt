@@ -32,6 +32,17 @@ internal object AndroidWorkInputMapper {
     internal const val KEY_MAX_ATTEMPTS: String = "_backgrounder.max_attempts"
 
     /**
+     * Instant-dispatch payload. The runNow path needs only the task id —
+     * `PendingInstantCalls` (in-process map) holds the lambda and the
+     * deferred. WorkManager re-uses this slim payload across both [Data] keys.
+     */
+    fun toInstantData(taskId: TaskId): Data =
+        Data
+            .Builder()
+            .putString(KEY_TASK_ID, taskId.value)
+            .build()
+
+    /**
      * Build the [Data] payload for a scheduled task.
      *
      * @throws IllegalArgumentException if the combined serialised size of every

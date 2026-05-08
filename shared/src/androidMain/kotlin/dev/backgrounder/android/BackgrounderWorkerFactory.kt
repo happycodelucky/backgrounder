@@ -5,6 +5,7 @@ import androidx.work.ListenableWorker
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import dev.backgrounder.BackgrounderEventListener
+import dev.backgrounder.PendingInstantCalls
 import dev.backgrounder.WorkerRegistry
 
 /**
@@ -25,6 +26,7 @@ internal class BackgrounderWorkerFactory(
     private val registry: WorkerRegistry,
     private val eventListener: BackgrounderEventListener,
     private val readyGate: kotlinx.atomicfu.AtomicBoolean,
+    private val pendingInstantCalls: PendingInstantCalls,
 ) : WorkerFactory() {
     override fun createWorker(
         appContext: Context,
@@ -36,7 +38,14 @@ internal class BackgrounderWorkerFactory(
         // can defer to the next factory. Comparing against `class.java.name`
         // is the documented pattern; `Class.forName(workerClassName)` would
         // load the class on every dispatch which we don't need.
-        if (workerClassName != RegistryDispatchWorker::class.java.name) return null
-        return RegistryDispatchWorker(appContext, workerParameters, registry, eventListener, readyGate)
+        return when (workerClassName) {
+            RegistryDispatchWorker::class.java.name ->
+                RegistryDispatchWorker(appContext, workerParameters, registry, eventListener, readyGate)
+
+            InstantDispatchWorker::class.java.name ->
+                InstantDispatchWorker(appContext, workerParameters, pendingInstantCalls)
+
+            else -> null
+        }
     }
 }

@@ -8,6 +8,7 @@ import dev.backgrounder.Backgrounder
 import dev.backgrounder.BackgrounderCore
 import dev.backgrounder.BackgrounderEventListener
 import dev.backgrounder.EphemeralRegistry
+import dev.backgrounder.PendingInstantCalls
 import dev.backgrounder.WorkerRegistry
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.Foundation.NSUserDefaults
@@ -104,10 +105,19 @@ internal object IOSBackgrounderBuilder {
                 backgroundFeed = backgroundFeed,
             )
 
+        // The instant-runNow path is fully independent of BGTaskScheduler — see
+        // UIBackgroundTaskInstantRunner KDoc for why. It is *not* a parallel
+        // branch of IOSCoroutineBridge: BGTaskScheduler is the wrong primitive
+        // for "do this now and let me await the result", so we use
+        // UIApplication.beginBackgroundTask instead.
+        val pendingInstantCalls = PendingInstantCalls()
+        val instantRunner = UIBackgroundTaskInstantRunner(pendingInstantCalls)
+
         return Backgrounder(
             BackgrounderCore(
                 registry = registry,
                 scheduler = scheduler,
+                instantRunner = instantRunner,
                 onStart = {
                     // Sweep first (clears ephemeral state before any handler fires),
                     // then registration (registers OS handlers, validates plist,
@@ -127,10 +137,13 @@ internal object IOSBackgrounderBuilder {
                     // Reverse order: tear down the foreground feed first (removes
                     // UIApplication observers), then the background feed (cancels
                     // the per-tick scope), then the bridge (cancels the per-task
-                    // scope used for one-shots).
+                    // scope used for one-shots), then the instant runner (ends
+                    // any outstanding UIApplication.beginBackgroundTask runways
+                    // and completes pending deferreds with CancellationException).
                     foregroundFeed.shutdown()
                     backgroundFeed.shutdown()
                     bridge.shutdown()
+                    instantRunner.shutdown()
                 },
             ),
         )

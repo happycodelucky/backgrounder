@@ -8,6 +8,7 @@ import dev.backgrounder.Backgrounder
 import dev.backgrounder.BackgrounderCore
 import dev.backgrounder.BackgrounderEventListener
 import dev.backgrounder.EphemeralRegistry
+import dev.backgrounder.PendingInstantCalls
 import dev.backgrounder.WorkerRegistry
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.Foundation.NSUserDefaults
@@ -40,17 +41,28 @@ internal object MacOSBackgrounderBuilder {
                 eventListener = eventListener,
             )
 
+        // The instant runner is owned by Backgrounder, not Scheduler — see plan
+        // §"Why a separate runner type rather than reusing Scheduler". macOS's
+        // runner runs the lambda directly on a library scope; no platform
+        // scheduler is involved.
+        val pendingInstantCalls = PendingInstantCalls()
+        val instantRunner = LibraryScopeInstantRunner(pendingInstantCalls)
+
         return Backgrounder(
             BackgrounderCore(
                 registry = registry,
                 scheduler = scheduler,
+                instantRunner = instantRunner,
                 onStart = {
                     // macOS has no OS-level "registered task ids" concept; the
                     // ephemeral sweep just clears our mirror. (Plan §2.2.)
                     val ids = ephemeral.snapshot()
                     if (ids.isNotEmpty()) ephemeral.clear()
                 },
-                onShutdown = { scheduler.shutdown() },
+                onShutdown = {
+                    scheduler.shutdown()
+                    instantRunner.shutdown()
+                },
             ),
         )
     }
