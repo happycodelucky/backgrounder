@@ -36,6 +36,13 @@ internal class WorkManagerScheduler(
     private val ephemeral: EphemeralRegistry,
     private val eventListener: BackgrounderEventListener,
     private val scheduledTaskQuery: AndroidScheduledTaskQuery,
+    /**
+     * Process-local in-memory tracker of task ids this scheduler has enqueued.
+     * Drives the [CancelOutcome] return value (review-loop round 1, finding
+     * H-CONSENSUS-1). Defaulted so production wiring stays a no-arg
+     * construction; tests can inject their own.
+     */
+    private val scheduledIds: ScheduledIdsTracker = ScheduledIdsTracker(),
 ) : Scheduler {
     private val log = Logger.withTag("Backgrounder/WorkManagerScheduler")
 
@@ -45,6 +52,7 @@ internal class WorkManagerScheduler(
     ): ScheduleOutcome {
         if (request.ephemeral) ephemeral.add(request.taskId)
         eventListener.onScheduled(request.taskId, request)
+        scheduledIds.add(request.taskId)
 
         return when (request) {
             is WorkRequest.OneTime -> scheduleOneTime(request, policy)
@@ -123,21 +131,33 @@ internal class WorkManagerScheduler(
     }
 
     override fun cancel(taskId: TaskId): CancelOutcome {
+        // Best-effort: if this process didn't schedule the id, return NoSuchTask
+        // honestly so callers branching on the outcome see the same shape they
+        // get on iOS / macOS (review-loop round 1, finding H-CONSENSUS-1).
+        // `cancelUniqueWork` is still called regardless so cross-process work
+        // gets cancelled on WorkManager's side.
+        val wasKnown = scheduledIds.removeIfPresent(taskId)
         ephemeral.remove(taskId)
-        // WorkManager.cancelUniqueWork is fire-and-forget; we can't synchronously confirm
-        // whether anything matched. Be optimistic: report Cancelled if the task id had
-        // ever been scheduled in this process, NoSuchTask otherwise (best-effort).
         workManager.cancelUniqueWork(taskId.value)
-        eventListener.onCancelled(taskId)
-        return CancelOutcome.Cancelled(pendingCleared = 1)
+        if (wasKnown) {
+            eventListener.onCancelled(taskId)
+            return CancelOutcome.Cancelled(pendingCleared = 1)
+        }
+        return CancelOutcome.NoSuchTask
     }
 
     override fun cancelAll(): CancelOutcome {
-        // We only want to cancel work *we* enqueued — use the canonical tag.
+        val cleared = scheduledIds.clearAndCount()
+        // Cancel all Backgrounder-tagged work — even cross-process — so the OS
+        // side stays consistent regardless of whether we tracked the id locally.
         workManager.cancelAllWorkByTag(AndroidScheduledTaskQuery.BACKGROUNDER_TAG)
         ephemeral.clear()
-        log.i { "cancelAll(): cleared all Backgrounder-tagged work" }
-        return CancelOutcome.Cancelled(pendingCleared = -1) // unknown count.
+        if (cleared == 0) {
+            log.d { "cancelAll(): nothing scheduled in this process" }
+            return CancelOutcome.NoSuchTask
+        }
+        log.i { "cancelAll(): cleared $cleared Backgrounder-tagged work item(s)" }
+        return CancelOutcome.Cancelled(pendingCleared = cleared)
     }
 
     override suspend fun scheduled(): List<ScheduledTask> = scheduledTaskQuery.snapshot()
