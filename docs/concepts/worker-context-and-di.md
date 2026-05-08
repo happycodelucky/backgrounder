@@ -37,7 +37,7 @@ There is **no** `coroutineScope` field. Cancellation flows through normal corout
 ```kotlin
 data class PlatformCapabilities(
     val maxExecutionTime: Duration,    // ~30s on iOS Expedited; ~10min on Android Standard.
-    val cancelsInFlight: Boolean,      // false on iOS — see Force-quit caveat
+    val cancelsInFlight: Boolean,      // false on iOS — see Cancel work recipe and Guarantees
 )
 ```
 

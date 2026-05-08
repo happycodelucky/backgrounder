@@ -22,6 +22,16 @@ public class WorkerRegistry {
     private val factories: MutableMap<TaskId, () -> BackgroundWorker> = mutableMapOf()
     private val sealed = atomic(false)
 
+    /**
+     * Associate [taskId] with a [factory] that builds a fresh [BackgroundWorker] per dispatch.
+     *
+     * Must be called before [Backgrounder.registerHandlers] (iOS / macOS) or
+     * [Backgrounder.markReady] (Android). Throws if the registry is already sealed or
+     * [taskId] was already registered.
+     *
+     * @throws IllegalStateException if the registry is sealed.
+     * @throws IllegalArgumentException if [taskId] is already registered.
+     */
     public fun register(
         taskId: TaskId,
         factory: () -> BackgroundWorker,
@@ -36,6 +46,7 @@ public class WorkerRegistry {
             factories[taskId] = factory
         }
 
+    /** Returns the set of task ids currently registered. Snapshot — safe to call at any time. */
     public fun registeredIds(): Set<TaskId> = synchronized(lock) { factories.keys.toSet() }
 
     /**

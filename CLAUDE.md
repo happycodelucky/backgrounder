@@ -29,7 +29,7 @@ Floors as of last edit:
 
 - Kotlin 2.3.21
 - Gradle 9.x
-- AGP 8.x with `com.android.kotlin.multiplatform.library` (use the new `android` block, not `androidTarget`)
+- AGP 9.x with `com.android.kotlin.multiplatform.library` (use the new `android` block, not `androidTarget`)
 - JVM target 21
 - Latest stable Xcode that the current Kotlin release supports
 
@@ -230,12 +230,18 @@ fun openUrl(url: String)
 
 **`@ShouldRefineInSwift`** (with `@HiddenFromObjC`) — when SKIE generates a Swift wrapper and the raw Kotlin should be hidden.
 
-**`@Throws(...)`** — required on every `suspend fun` and any function that can throw across the boundary. Without it, exceptions become unrecoverable iOS crashes.
+**`@Throws(...)`** — required on every public `suspend fun` and any public function that can throw across the boundary. Without it, exceptions become unrecoverable iOS crashes (NSGenericException, no Swift catch site).
+
+List the **domain exceptions** the function actually throws — `IOException`, `SerializationException`, `IllegalArgumentException`, etc.
 
 ```kotlin
-@Throws(NetworkException::class, CancellationException::class)
+@Throws(NetworkException::class)
 suspend fun fetchUser(id: String): User
 ```
+
+**Do NOT include `CancellationException` in the `@Throws` list.** This repo uses SKIE, which bridges `suspend fun` as Swift `async throws` and routes coroutine cancellation through Swift's native `Task.cancel()` / `CancellationError` machinery. KMP handles cancellation transparently — adding `CancellationException::class` to `@Throws` pollutes the generated Swift signature and forces consumers to write a meaningless `catch is CancellationError` arm.
+
+The legacy pattern `@Throws(CancellationException::class)` was correct for direct Kotlin/Native ObjC export (no SKIE). It's incorrect here. Existing call sites that include it should be cleaned up.
 
 ### API design for Swift consumers
 

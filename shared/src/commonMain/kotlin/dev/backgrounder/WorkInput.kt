@@ -16,14 +16,19 @@ import kotlin.native.HiddenFromObjC
 public class WorkInput private constructor(
     private val map: Map<String, WorkValue>,
 ) {
+    /** Number of key/value pairs in this input. */
     public val size: Int get() = map.size
+
+    /** `true` if this input contains no key/value pairs. */
     public val isEmpty: Boolean get() = map.isEmpty()
 
+    /** Returns the [WorkValue] for [key], or `null` if the key is absent. */
     public operator fun get(key: String): WorkValue? = map[key]
 
     /** Read-only view of the underlying map; iteration order is insertion order. */
     public fun entries(): Set<Map.Entry<String, WorkValue>> = map.entries
 
+    /** Serialize this input to its compact JSON form. Useful for debugging or manual persistence. */
     public fun toJson(): String = json.encodeToString(serializer(), this)
 
     override fun equals(other: Any?): Boolean = this === other || (other is WorkInput && map == other.map)
@@ -33,6 +38,11 @@ public class WorkInput private constructor(
     override fun toString(): String = "WorkInput(${map.keys.joinToString()})"
 
     public companion object {
+        /**
+         * Hard cap on the serialized size of a [WorkInput], in bytes. Matches
+         * Android's `androidx.work.Data` cap so cross-platform payloads never
+         * exceed the Android limit.
+         */
         public const val MAX_SERIALIZED_BYTES: Int = 10240
 
         // Compact JSON: no pretty-printing, no defaults, sealed-class polymorphism.
@@ -44,6 +54,7 @@ public class WorkInput private constructor(
                 ignoreUnknownKeys = false
             }
 
+        /** Returns an empty [WorkInput] with no key/value pairs. */
         public fun empty(): WorkInput = WorkInput(emptyMap())
 
         /**
@@ -62,6 +73,13 @@ public class WorkInput private constructor(
         @HiddenFromObjC
         public fun of(vararg pairs: Pair<String, WorkValue>): WorkInput = ofMap(pairs.toMap(LinkedHashMap()))
 
+        /**
+         * Build a [WorkInput] from a [Map]. Preferred for Swift consumers
+         * (the `Pair` vararg form of [of] doesn't bridge cleanly to Swift).
+         *
+         * @throws IllegalArgumentException if any key is empty or the serialized
+         *   size exceeds [MAX_SERIALIZED_BYTES].
+         */
         public fun ofMap(map: Map<String, WorkValue>): WorkInput {
             require(map.keys.all { it.isNotEmpty() }) { "WorkInput keys must be non-empty" }
             val candidate = WorkInput(LinkedHashMap(map))

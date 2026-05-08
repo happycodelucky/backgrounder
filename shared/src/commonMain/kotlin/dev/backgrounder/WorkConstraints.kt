@@ -12,7 +12,9 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 public data class WorkConstraints(
+    /** Network connectivity level required before the scheduler dispatches this request. */
     val networkRequired: NetworkRequirement = NetworkRequirement.None,
+    /** If `true`, the device must be connected to external power before dispatching. */
     val requiresCharging: Boolean = false,
 )
 

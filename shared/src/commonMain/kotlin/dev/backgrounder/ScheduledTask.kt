@@ -14,13 +14,17 @@ import kotlin.time.Instant
  *   that span is reported as [State.Pending] rather than [State.Running].
  */
 public data class ScheduledTask(
+    /** The stable reverse-DNS identifier this task was scheduled under. */
     public val taskId: TaskId,
+    /** Whether this task was scheduled as a one-time or repeating request. */
     public val kind: Kind,
+    /** Current execution state; see [State] for per-platform accuracy caveats. */
     public val state: State,
     /** Best-effort hint of when the platform plans to run this next. May be null. */
     public val nextRunHint: Instant?,
     /** Library-tracked retry attempt counter (within a cycle for periodic). */
     public val attempt: Int,
+    /** `true` if this task was scheduled with `WorkRequest.ephemeral = true`. */
     public val ephemeral: Boolean,
 ) {
     public enum class Kind { OneTime, Periodic }

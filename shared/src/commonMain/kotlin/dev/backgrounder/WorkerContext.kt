@@ -10,9 +10,12 @@ package dev.backgrounder
  * Constructed by the library; not user-instantiable.
  */
 public class WorkerContext internal constructor(
+    /** The stable task id this invocation was dispatched for. */
     public val taskId: TaskId,
     /** 0-based attempt counter. Increments on each [WorkResult.Retry] cycle. */
     public val attempt: Int,
+    /** Key/value bag supplied at schedule time via [WorkRequest.input]. */
     public val input: WorkInput,
+    /** Runtime constraints and capabilities the platform offers this invocation. */
     public val capabilities: PlatformCapabilities,
 )

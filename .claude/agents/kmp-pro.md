@@ -78,7 +78,13 @@ For every public-from-Swift declaration in `commonMain` or `iosMain`:
    | `closeConnection()` | `close()` |
    | `attachToUrl(url: String)` | `attachTo(url: String)` (single param + `@ObjCName(swiftName = "attachTo")`) — read the user's example; the rule is that the function *name* shouldn't repeat the parameter label |
 
-2. **`@Throws(...)` is mandatory** on every public `suspend fun` and any function that can throw across the boundary. Without it, exceptions become **unrecoverable iOS crashes**. At minimum: `@Throws(CancellationException::class)`. Add domain exception types when you throw them.
+2. **`@Throws(...)` audit** — every public Kotlin API likely to be consumed from Swift must declare its checked exceptions. Without `@Throws`, anything thrown across the boundary becomes an **unrecoverable iOS crash** (NSGenericException, no catch site).
+
+   - **What to annotate:** every public `suspend fun`, every public non-suspend fun that documents `@throws`, every public `init` that calls `require`/`check`. Treat "likely to be consumed from Swift" as anything in `commonMain`, `appleMain`, `iosMain`, or `macosMain` that is `public` (not `internal`/`private`).
+   - **What to list:** the **domain exceptions** the function actually throws. List them concretely — `IOException`, `SerializationException`, `IllegalArgumentException`, etc.
+   - **Do NOT include `CancellationException`.** This is a SKIE-specific rule that overrides the generic Kotlin/Native ObjC export advice. SKIE bridges `suspend fun` as Swift `async throws` and routes coroutine cancellation through Swift's native `Task.cancel()` / `CancellationError` machinery — it does **not** surface `CancellationException` through the `@Throws` list. Adding it forces Swift consumers to write a meaningless `catch is CancellationError` arm and pollutes the generated Swift signature. The KMP runtime already handles cancellation transparently.
+   - **Migration note for older code:** the legacy pattern `@Throws(CancellationException::class)` was correct for direct Kotlin/Native ObjC export (no SKIE). This repo uses SKIE, so existing call sites should be **flagged for cleanup** — drop `CancellationException` from the list, keep domain exceptions. CLAUDE.md §8's example currently includes `CancellationException`; that example is misleading for a SKIE-enabled project and is itself a documentation finding worth flagging.
+   - **What to write in a finding:** when you spot a public Swift-facing function missing `@Throws` for an exception it can throw, cite the exact exception type and the file:line. When you spot `CancellationException` in an existing `@Throws` list, flag it as a SKIE-cancellation cleanup item with confidence ≥ 90.
 
 3. **`@HiddenFromObjC`** + `@OptIn(ExperimentalObjCRefinement::class)` on Kotlin-only APIs — anything using `Pair`, `Triple`, `Result<T>`, star-projected generics, or vararg-of-Pair builders. Provide a Swift-friendly alternative.
 

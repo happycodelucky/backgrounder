@@ -46,6 +46,7 @@ public value class TaskId(
     override fun toString(): String = value
 
     public companion object {
+        /** Maximum number of characters a [TaskId] value may contain. */
         public const val MAX_LENGTH: Int = 128
     }
 }

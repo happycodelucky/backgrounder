@@ -7,6 +7,7 @@ package dev.backgrounder
  * `enum` (CLAUDE.md §8 rule 2).
  */
 public sealed interface ScheduleOutcome {
+    /** The request was accepted and submitted to the platform scheduler. */
     public data object Scheduled : ScheduleOutcome
 
     /**
