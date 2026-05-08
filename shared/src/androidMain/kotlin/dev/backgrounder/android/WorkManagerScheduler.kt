@@ -31,8 +31,8 @@ import androidx.work.WorkRequest as AndroidWorkRequest
  * One bridge worker class ([RegistryDispatchWorker]) handles every task id —
  * see plan §"Why one bridge worker for all task ids."
  */
-internal class WorkManagerScheduler(
-    private val workManager: WorkManager,
+internal class WorkManagerScheduler private constructor(
+    private val workManagerProvider: () -> WorkManager,
     private val ephemeral: EphemeralRegistry,
     private val eventListener: BackgrounderEventListener,
     private val scheduledTaskQuery: AndroidScheduledTaskQuery,
@@ -44,6 +44,54 @@ internal class WorkManagerScheduler(
      */
     private val scheduledIds: ScheduledIdsTracker = ScheduledIdsTracker(),
 ) : Scheduler {
+    /**
+     * Eager-WorkManager constructor for the legacy Koin module. Calls the
+     * primary constructor with a captured `WorkManager` reference. Will be
+     * deleted in Step 5 of the DI-free init redesign once the Koin module
+     * goes away (plan §"DI-free initialization" §3.1).
+     */
+    constructor(
+        workManager: WorkManager,
+        ephemeral: EphemeralRegistry,
+        eventListener: BackgrounderEventListener,
+        scheduledTaskQuery: AndroidScheduledTaskQuery,
+        scheduledIds: ScheduledIdsTracker = ScheduledIdsTracker(),
+    ) : this(
+        workManagerProvider = { workManager },
+        ephemeral = ephemeral,
+        eventListener = eventListener,
+        scheduledTaskQuery = scheduledTaskQuery,
+        scheduledIds = scheduledIds,
+    )
+
+    /**
+     * Lazy-WorkManager constructor for the new [AndroidBackgrounderBuilder].
+     * The provider is called on every `schedule` / `cancel` so we don't trigger
+     * `WorkManager.getInstance(context)` until the user has installed our
+     * factory via `Configuration.Provider` (plan §2.3, "chicken-and-egg").
+     *
+     * `WorkManager.getInstance(context)` is itself a fast singleton lookup once
+     * the configuration is locked, so per-call invocation is cheap.
+     */
+    internal companion object {
+        fun withProvider(
+            workManagerProvider: () -> WorkManager,
+            ephemeral: EphemeralRegistry,
+            eventListener: BackgrounderEventListener,
+            scheduledTaskQuery: AndroidScheduledTaskQuery,
+            scheduledIds: ScheduledIdsTracker = ScheduledIdsTracker(),
+        ): WorkManagerScheduler =
+            WorkManagerScheduler(
+                workManagerProvider = workManagerProvider,
+                ephemeral = ephemeral,
+                eventListener = eventListener,
+                scheduledTaskQuery = scheduledTaskQuery,
+                scheduledIds = scheduledIds,
+            )
+    }
+
+    private val workManager: WorkManager get() = workManagerProvider()
+
     private val log = Logger.withTag("Backgrounder/WorkManagerScheduler")
 
     override fun schedule(
