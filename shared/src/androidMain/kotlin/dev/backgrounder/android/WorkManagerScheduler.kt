@@ -150,7 +150,7 @@ internal class WorkManagerScheduler(
         val cleared = scheduledIds.clearAndCount()
         // Cancel all Backgrounder-tagged work — even cross-process — so the OS
         // side stays consistent regardless of whether we tracked the id locally.
-        workManager.cancelAllWorkByTag(AndroidScheduledTaskQuery.BACKGROUNDER_TAG)
+        workManager.cancelAllWorkByTag(AndroidScheduledTaskMapper.BACKGROUNDER_TAG)
         ephemeral.clear()
         if (cleared == 0) {
             log.d { "cancelAll(): nothing scheduled in this process" }
@@ -203,9 +203,9 @@ private fun <B : AndroidWorkRequest.Builder<B, *>> B.applyTags(
     taskId: TaskId,
     periodic: Boolean,
 ): B {
-    addTag(AndroidScheduledTaskQuery.BACKGROUNDER_TAG)
-    addTag("${AndroidScheduledTaskQuery.TASK_ID_TAG_PREFIX}${taskId.value}")
-    if (periodic) addTag(AndroidScheduledTaskQuery.KIND_PERIODIC_TAG)
+    addTag(AndroidScheduledTaskMapper.BACKGROUNDER_TAG)
+    addTag("${AndroidScheduledTaskMapper.TASK_ID_TAG_PREFIX}${taskId.value}")
+    if (periodic) addTag(AndroidScheduledTaskMapper.KIND_PERIODIC_TAG)
     return this
 }
 
