@@ -1,6 +1,8 @@
 package dev.backgrounder
 
 import kotlinx.serialization.Serializable
+import kotlin.experimental.ExperimentalObjCName
+import kotlin.native.ObjCName
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
@@ -12,11 +14,18 @@ import kotlin.time.Duration.Companion.seconds
  * to [WorkResult.Failure] (Android: returns `Result.failure()`; iOS: stops
  * resubmitting). For periodic workers, the counter resets after each
  * [WorkResult.Success] cycle.
+ *
+ * `@OptIn(ExperimentalObjCName::class)`: Swift-rename annotations so iOS app
+ * code calls `BackoffPolicy.linear(initialDelay:maxAttempts:)` cleanly
+ * (CLAUDE.md §8). The companion-factory shape is acceptable here because the
+ * sealed-interface variants leave no alternative constructor surface.
  */
+@OptIn(ExperimentalObjCName::class)
 @Serializable
 public sealed interface BackoffPolicy {
     public val maxAttempts: Int
 
+    @ObjCName(swiftName = "delayFor")
     public fun delayFor(attempt: Int): Duration
 
     /**
@@ -86,12 +95,14 @@ public sealed interface BackoffPolicy {
         private const val MAX_SHIFT_BITS: Int = 30
 
         /** Convenience factory for [Linear] with the given parameters. */
+        @ObjCName(swiftName = "linear")
         public fun linear(
             initialDelay: Duration = 30.seconds,
             maxAttempts: Int = DEFAULT_MAX_ATTEMPTS,
         ): BackoffPolicy = Linear(initialDelay, maxAttempts)
 
         /** Convenience factory for [Exponential] with the given parameters. */
+        @ObjCName(swiftName = "exponential")
         public fun exponential(
             initialDelay: Duration = 30.seconds,
             maxAttempts: Int = DEFAULT_MAX_ATTEMPTS,
