@@ -243,12 +243,52 @@ suspend fun fetchUser(id: String): User
 
 The legacy pattern `@Throws(CancellationException::class)` was correct for direct Kotlin/Native ObjC export (no SKIE). It's incorrect here. Existing call sites that include it should be cleaned up.
 
+### Sealed result types over `kotlin.Result<T>`
+
+**No `kotlin.Result<T>` in any public Swift-facing signature.** Not as a return type, not as a `val` / `var` type, not nested in a `Flow<Result<T>>` / `StateFlow<Result<T>>` / `SharedFlow<Result<T>>`. Use a project-defined `sealed interface` instead.
+
+**Why `kotlin.Result<T>` doesn't bridge.** SKIE has no special-case mapping for `kotlin.Result<T>`, and it doesn't bridge to Swift's `Result<Success, Failure>` either — Swift's `Result` requires `Failure: Error` and a different generic shape, and the K/N → ObjC layer erases `kotlin.Result`'s payload. What Swift sees instead is an opaque `KotlinResult` wrapper with no exhaustive `switch`, no `try?` / `catch` integration, and no value-type semantics. Consumers end up writing reflective `isSuccess` / `getOrNull` calls that defeat the point.
+
+**There is no KMP-friendly `Result` library.** None of our Step-1 libraries ship one and SKIE does not synthesise one. Don't go shopping. The answer is a sealed interface defined in `commonMain`, which SKIE renders as an exhaustive Swift `enum` via `onEnum(of:)` — *richer* than Swift's two-case `Result` because the cases can carry arbitrary structured payloads.
+
+```kotlin
+// Wrong — Swift sees an opaque KotlinResult, no exhaustive switch.
+suspend fun fetchUser(id: String): Result<User>
+
+// Right — SKIE renders this as a Swift enum; `onEnum(of:)` makes it exhaustive.
+sealed interface FetchUserOutcome {
+    data class Success(val user: User) : FetchUserOutcome
+    data class NotFound(val id: String) : FetchUserOutcome
+    data class Failure(val reason: String) : FetchUserOutcome
+}
+
+suspend fun fetchUser(id: String): FetchUserOutcome
+```
+
+| `kotlin.Result<T>` | Project sealed interface |
+|---|---|
+| Opaque `KotlinResult` in Swift | Native Swift `enum` via SKIE `onEnum(of:)` |
+| No exhaustive `switch` | Compiler-enforced exhaustivity |
+| Two cases: success / failure | Arbitrary cases with structured payloads |
+| Failure is `Throwable` — opaque from Swift | Failure case carries domain-typed fields |
+| Generic `T` erased at the bridge | Concrete payload types preserved |
+
+**Templates already in this repo.** Mirror their shape:
+
+- `shared/src/commonMain/kotlin/dev/backgrounder/WorkResult.kt`
+- `shared/src/commonMain/kotlin/dev/backgrounder/ScheduleOutcome.kt`
+- `shared/src/commonMain/kotlin/dev/backgrounder/CancelOutcome.kt`
+
+**Internal use of `runCatching` is fine.** This rule is about return types crossing the Swift boundary. `runCatching { ... }.getOrElse { ... }` inside an `internal` function — to swallow-on-purpose, log, or fold into a sealed outcome before returning — does not violate it. The line is drawn at `public` visibility on `commonMain` / `appleMain` / `iosMain` / `macosMain` declarations.
+
+The same rule applies to `Pair<A, B>` / `Triple<…>` at the public boundary — same root cause (opaque generic wrapper, no exhaustivity), same fix (named `data class`).
+
 ### API design for Swift consumers
 
 1. Verbs without the object. `open(url:)`, not `openUrl(url:)`.
 2. `sealed interface` for results, not nullable + error code. SKIE makes it exhaustive.
 3. `Flow<T>` over callbacks. Never a callback-based public API in `commonMain`.
-4. No `Result<T>` at the boundary. Use a named sealed interface (`Outcome.Success` / `Outcome.Failure`).
+4. No `kotlin.Result<T>` at the boundary. Use a named sealed interface — see "Sealed result types over `kotlin.Result<T>`" above.
 5. No `Pair`/`Triple` in public API. Define a `data class`.
 6. No star-projected generics across the boundary. Concrete types.
 7. No companion-object factories for Swift-facing entry points. Top-level functions or constructors.
