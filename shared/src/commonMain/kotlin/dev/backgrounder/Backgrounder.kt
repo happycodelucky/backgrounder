@@ -62,6 +62,29 @@ public object Backgrounder {
     public fun markReady() {
         platformMarkReady()
     }
+
+    /**
+     * Tear down library-owned coroutine scopes.
+     *
+     * **iOS / macOS:** cancels the [kotlinx.coroutines.CoroutineScope] owned by
+     * the Apple-platform scheduler / coroutine bridge. CLAUDE.md §3 requires
+     * every `CoroutineScope` to have a clear owner with a defined cancellation
+     * lifecycle; this is that lifecycle hook. In-flight workers observe a
+     * `CancellationException` and the per-task completion guard reports the
+     * iOS-level task as `setTaskCompletedWithSuccess(false)` exactly once.
+     *
+     * **Android:** no-op. WorkManager owns its own dispatch scope; the library
+     * does not hold one.
+     *
+     * Safe to call multiple times. Typically called from app teardown — e.g. an
+     * iOS test's `tearDown`, or in production never, since the OS reclaims the
+     * process. The macOS desktop app should call this from
+     * `applicationWillTerminate`.
+     */
+    @ObjCName(swiftName = "shutdown")
+    public fun shutdown() {
+        platformShutdown()
+    }
 }
 
 internal expect fun platformAttachTo(application: Any?)
@@ -69,3 +92,5 @@ internal expect fun platformAttachTo(application: Any?)
 internal expect fun platformRegisterHandlers()
 
 internal expect fun platformMarkReady()
+
+internal expect fun platformShutdown()

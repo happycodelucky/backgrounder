@@ -2,6 +2,7 @@ package dev.backgrounder.ios
 
 import co.touchlab.kermit.Logger
 import dev.backgrounder.BackgrounderEventListener
+import dev.backgrounder.CompletionGuard
 import dev.backgrounder.PlatformCapabilities
 import dev.backgrounder.TaskId
 import dev.backgrounder.WorkResult
@@ -12,6 +13,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import platform.BackgroundTasks.BGAppRefreshTask
 import platform.BackgroundTasks.BGTask
@@ -32,18 +34,25 @@ import kotlin.time.Duration.Companion.seconds
  * Lifecycle of one fire:
  *  1. OS calls the registered closure with a [BGTask].
  *  2. We read attempt + input from [IOSStateStore] under the per-id [Mutex].
- *  3. We launch a coroutine that calls the worker.
- *  4. The worker returns a [WorkResult]; the bridge applies it via
- *     [applyResult] (which may resubmit, persist, mark completed).
- *  5. If iOS expires before completion, the expiration handler cancels
- *     the job and reports `setTaskCompletedSuccess(false)`.
+ *  3. We register the expiration handler **before** launching the worker —
+ *     Apple's `BGTaskScheduler` documents that an unset expiration handler at
+ *     the moment the system reclaims the task can crash the process. The
+ *     handler captures the [Job] via a lateinit slot.
+ *  4. We launch a coroutine that calls the worker.
+ *  5. The worker returns a [WorkResult]; the bridge applies it via
+ *     [applyResult] (which may resubmit, persist, mark completed). Every
+ *     call to `setTaskCompletedWithSuccess` goes through a per-fire
+ *     [CompletionGuard] so iOS's "completed twice" assertion can't trigger.
+ *  6. If iOS expires before completion, the expiration handler cancels
+ *     the job; `invokeOnCompletion` then runs the guarded fallback that
+ *     reports `setTaskCompletedSuccess(false)`.
  */
 internal class IOSCoroutineBridge(
     private val registry: WorkerRegistry,
     private val state: IOSStateStore,
     private val mutexes: IOSTaskMutexes,
     private val eventListener: BackgrounderEventListener,
-    private val applyResult: suspend (BGTask, TaskId, Int, WorkResult) -> Unit,
+    private val applyResult: suspend (BGTask, TaskId, Int, WorkResult, CompletionGuard) -> Unit,
 ) {
     private val log = Logger.withTag("Backgrounder/iOS")
 
@@ -64,8 +73,22 @@ internal class IOSCoroutineBridge(
         tagged.d { "handle: attempt=$attempt" }
 
         val capabilities = capabilitiesFor(task)
+        val guard = CompletionGuard()
 
-        val job: Job =
+        // ── M-1: register the expiration handler BEFORE launching the worker.
+        // Apple's BGTaskScheduler can fire expiration any time after the handler
+        // closure returns; if `setExpirationHandler` is unset at that moment, the
+        // system kills the process. Using a lateinit job slot lets us bind the
+        // handler now and the job after `launch` returns. The handler is a
+        // value-capture closure — it reads `job` only when the system invokes it,
+        // which is necessarily after `launch` has assigned the field.
+        var job: Job? = null
+        task.setExpirationHandler {
+            tagged.w { "BGTask expired; cancelling worker" }
+            job?.cancel(CancellationException("BGTask expired"))
+        }
+
+        job =
             scope.launch {
                 mutexes.withMutex(taskId) {
                     val worker =
@@ -73,7 +96,7 @@ internal class IOSCoroutineBridge(
                             registry.create(taskId)
                         } catch (e: WorkerRegistry.NoFactoryRegisteredException) {
                             tagged.e(e) { "no factory registered; treating as Failure" }
-                            applyResult(task, taskId, attempt, WorkResult.Failure("no factory: $taskId"))
+                            applyResult(task, taskId, attempt, WorkResult.Failure("no factory: $taskId"), guard)
                             return@withMutex
                         }
 
@@ -96,22 +119,19 @@ internal class IOSCoroutineBridge(
                             WorkResult.Retry
                         }
 
-                    applyResult(task, taskId, attempt, result)
+                    applyResult(task, taskId, attempt, result, guard)
                     eventListener.onCompleted(taskId, attempt, result)
                 }
             }
 
-        task.setExpirationHandler {
-            tagged.w { "BGTask expired; cancelling worker" }
-            job.cancel(CancellationException("BGTask expired"))
-        }
-
+        // C-1: the cancellation/expiration fallback also goes through the guard.
+        // Without the guard, an expiration arriving after `applyResult` already
+        // called `setTaskCompletedWithSuccess(true)` would call it a second time
+        // with `false`, tripping Apple's "completed twice" assertion (and racing
+        // a successful run into a reported failure).
         job.invokeOnCompletion { cause ->
-            // Success path: applyResult already called setTaskCompleted; nothing to do.
-            // Cancellation / unexpected throw path: complete with success=false so iOS
-            // doesn't watchdog-terminate us.
             if (cause != null) {
-                runCatching { task.setTaskCompletedWithSuccess(false) }
+                guard.runOnce { task.setTaskCompletedWithSuccess(false) }
                 eventListener.onCompleted(
                     taskId,
                     attempt,
@@ -119,6 +139,21 @@ internal class IOSCoroutineBridge(
                 )
             }
         }
+    }
+
+    /**
+     * Cancel the bridge's scope. Call from app teardown / Koin module close
+     * to honour CLAUDE.md §3 ("every CoroutineScope has a clear owner with a
+     * defined cancellation lifecycle"). Mirrors
+     * [dev.backgrounder.macos.NSBackgroundActivityBackedScheduler.shutdown].
+     *
+     * After [shutdown], in-flight workers will observe a [CancellationException];
+     * the [CompletionGuard] in their [BGTask] handler ensures the iOS-level task
+     * still gets exactly one `setTaskCompletedWithSuccess(false)` call.
+     */
+    fun shutdown() {
+        log.i { "shutdown: cancelling Backgrounder.iOS scope" }
+        scope.cancel(CancellationException("IOSCoroutineBridge.shutdown"))
     }
 
     private fun capabilitiesFor(task: BGTask): PlatformCapabilities =

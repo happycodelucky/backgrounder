@@ -43,3 +43,10 @@ internal actual fun platformMarkReady() {
     AndroidEphemeralReady.markReady()
     log.i { "markReady: ephemeral workers may now dispatch" }
 }
+
+internal actual fun platformShutdown() {
+    // No-op on Android. WorkManager owns its own dispatcher and lifecycle; the
+    // library does not hold a CoroutineScope here. Provided for API symmetry
+    // with iOS / macOS, where shutting down the bridge scope is mandatory.
+    log.d { "shutdown: no-op on Android" }
+}
