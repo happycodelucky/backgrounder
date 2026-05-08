@@ -22,7 +22,7 @@ import kotlin.native.ObjCName
  * code calls `registry.register(taskId:factory:)` (CLAUDE.md §8).
  */
 @OptIn(ExperimentalObjCName::class)
-public class WorkerRegistry {
+public class WorkerRegistry internal constructor() {
     // MUST NOT call suspend functions inside this block — see CLAUDE.md §3.
     private val lock = SynchronizedObject()
     private val factories: MutableMap<TaskId, () -> BackgroundWorker> = mutableMapOf()
