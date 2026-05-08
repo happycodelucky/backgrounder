@@ -224,14 +224,18 @@ internal class BGTaskBackedScheduler(
         request: WorkRequest,
         policy: ConflictPolicy,
     ): ScheduleOutcome {
-        if (request.ephemeral) ephemeral.add(request.taskId)
-        eventListener.onScheduled(request.taskId, request)
-
-        // If a Keep policy and we already have an active record, no-op.
+        // H-3 (review-loop round 1): Keep-policy early-return must NOT run side
+        // effects. Previously `ephemeral.add(...)` and `eventListener.onScheduled(...)`
+        // both fired before the Keep guard, so a no-op schedule looked to metrics
+        // like a real schedule and could mutate the ephemeral registry of an
+        // already-active non-ephemeral task. Check the guard first.
         if (policy == ConflictPolicy.Keep && state.readActive(request.taskId)) {
             log.d { "schedule(${request.taskId}) Keep: existing active; not resubmitting" }
             return ScheduleOutcome.Scheduled
         }
+
+        if (request.ephemeral) ephemeral.add(request.taskId)
+        eventListener.onScheduled(request.taskId, request)
 
         return when (request) {
             is WorkRequest.OneTime -> scheduleOneTime(request)

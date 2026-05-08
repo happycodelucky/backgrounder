@@ -80,13 +80,30 @@ internal class NSBackgroundActivityBackedScheduler(
         request: WorkRequest,
         policy: ConflictPolicy,
     ): ScheduleOutcome {
+        // H-3 (parallel to iOS): the Keep-policy early-return must NOT run side
+        // effects. Probe the activities map first (under the lock to avoid a
+        // half-released-then-reacquired window), and only fire `onScheduled` /
+        // mutate `ephemeral` if we are actually going to schedule.
+        val keepWonRace =
+            synchronized(lock) {
+                val existing = activities[request.taskId]
+                policy == ConflictPolicy.Keep && existing != null
+            }
+        if (keepWonRace) {
+            log.d { "schedule(${request.taskId}) Keep: existing activity; not replacing" }
+            return ScheduleOutcome.Scheduled
+        }
+
         if (request.ephemeral) ephemeral.add(request.taskId)
         eventListener.onScheduled(request.taskId, request)
 
         return synchronized(lock) {
+            // Re-check under the lock — a concurrent `schedule(...)` may have raced
+            // in between the probe above and this acquisition. If we lose the race,
+            // honour Keep semantics for the task that won.
             val existing = activities[request.taskId]
             if (existing != null && policy == ConflictPolicy.Keep) {
-                log.d { "schedule(${request.taskId}) Keep: existing activity; not replacing" }
+                log.d { "schedule(${request.taskId}) Keep: existing activity; not replacing (lock-recheck)" }
                 return@synchronized ScheduleOutcome.Scheduled
             }
             existing?.invalidate()
@@ -186,19 +203,88 @@ internal class NSBackgroundActivityBackedScheduler(
                         }
                 }
 
+                // Periodic Retry: NSBackgroundActivityResultDeferred means "run me again
+                // later" and the OS will re-fire per the activity's `interval`. Periodic
+                // Success / Failure is also handled by the OS — Foundation will schedule
+                // the next cycle automatically.
+                //
+                // One-shot Retry — H-7 (review-loop round 1): a one-shot activity has
+                // `repeats=false`, and Apple documents that NSBackgroundActivityResultDeferred
+                // has no effect on a non-repeating activity. The previous code returned
+                // Deferred for this case, which silently dropped the Retry. The honest fix
+                // is to invalidate the current activity, schedule a fresh one with
+                // `interval = backoff.delayFor(attempt)`, and report Finished for the
+                // current attempt. Mirrors the iOS scheduler's resubmit pattern.
                 val activityResult =
-                    when (result) {
-                        WorkResult.Success, is WorkResult.Failure -> {
-                            NSBackgroundActivityResultFinished
-                        }
-
-                        WorkResult.Retry -> {
-                            NSBackgroundActivityResultDeferred
+                    if (result is WorkResult.Retry && request is WorkRequest.OneTime) {
+                        handleOneShotRetry(request, attempt)
+                    } else {
+                        when (result) {
+                            WorkResult.Success, is WorkResult.Failure -> NSBackgroundActivityResultFinished
+                            WorkResult.Retry -> NSBackgroundActivityResultDeferred
                         }
                     }
                 completion?.invoke(activityResult)
             }
         }
+    }
+
+    /**
+     * One-shot Retry path. Invalidates the current activity, schedules a fresh
+     * `NSBackgroundActivityScheduler` with `interval = backoff.delayFor(attempt)`,
+     * and returns the appropriate [NSBackgroundActivityResultFinished] for the
+     * current attempt. Bounded by [request.backoff.maxAttempts] — once the cap
+     * is exhausted the Retry converts to Failure and no resubmit happens.
+     *
+     * @return the activity result to pass to the system's completion handler
+     *   for the *current* attempt. The fresh activity (if any) is launched
+     *   as a side effect.
+     */
+    private fun handleOneShotRetry(
+        request: WorkRequest.OneTime,
+        attempt: Int,
+    ): platform.Foundation.NSBackgroundActivityResult {
+        val backoff = request.backoff
+        val nextAttempt = attempt + 1
+        if (nextAttempt >= backoff.maxAttempts) {
+            log.w {
+                "[${request.taskId}] one-shot reached maxAttempts(${backoff.maxAttempts}); " +
+                    "converting Retry to Failure and dropping schedule"
+            }
+            // Treat as terminal: clear local tracking so scheduled() reflects reality.
+            synchronized(lock) {
+                activities.remove(request.taskId)?.invalidate()
+                attempts.remove(request.taskId)
+                kinds.remove(request.taskId)
+                ephemeral.remove(request.taskId)
+            }
+            return NSBackgroundActivityResultFinished
+        }
+
+        // delayFor(attempt) — the attempt that *just failed* — matches Android's
+        // WorkManager backoff curve and the iOS resubmit math.
+        val delaySeconds = (backoff.delayFor(attempt).inWholeMilliseconds / 1000.0).coerceAtLeast(1.0)
+        log.i { "[${request.taskId}] one-shot Retry; resubmitting in ${delaySeconds}s (attempt=$nextAttempt)" }
+
+        synchronized(lock) {
+            // Invalidate the current activity *before* scheduling the fresh one so the
+            // map slot is cleanly reassigned. NSBackgroundActivityScheduler.invalidate
+            // is documented as safe from any thread.
+            activities.remove(request.taskId)?.invalidate()
+            val freshActivity =
+                NSBackgroundActivityScheduler(request.taskId.value).apply {
+                    qualityOfService = NSQualityOfServiceUtility
+                    repeats = false
+                    interval = delaySeconds
+                    tolerance = (interval * 0.1).coerceAtMost(interval)
+                }
+            activities[request.taskId] = freshActivity
+            // Launch the fresh activity. The closure captures the same `request`, so
+            // when it fires the worker sees the same input / constraints / backoff.
+            launchActivity(freshActivity, request)
+        }
+
+        return NSBackgroundActivityResultFinished
     }
 
     override fun cancel(taskId: TaskId): CancelOutcome =
