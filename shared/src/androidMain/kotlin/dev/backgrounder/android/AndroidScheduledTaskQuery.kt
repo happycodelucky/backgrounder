@@ -19,24 +19,11 @@ import kotlinx.coroutines.flow.firstOrNull
  * resolving early would lock the WorkManager configuration before the user's
  * `Configuration.Provider.workManagerConfiguration` had a chance to install
  * our [BackgrounderWorkerFactory] (plan §"DI-free initialization" §2.3).
- *
- * Two constructor shapes:
- *  - The public `(WorkManager, EphemeralRegistry)` constructor for the legacy
- *    Koin module path, which already has a fully-configured `WorkManager`.
- *    Will be deleted in Step 5 of the redesign.
- *  - [Companion.withProvider] for the new [AndroidBackgrounderBuilder].
  */
-internal class AndroidScheduledTaskQuery private constructor(
+internal class AndroidScheduledTaskQuery(
     private val workManagerProvider: () -> WorkManager,
     private val ephemeral: EphemeralRegistry,
 ) {
-    /**
-     * Eager-WorkManager constructor for the legacy Koin module path.
-     * Removed in Step 5 of the DI-free init redesign.
-     */
-    constructor(workManager: WorkManager, ephemeral: EphemeralRegistry) :
-        this(workManagerProvider = { workManager }, ephemeral = ephemeral)
-
     private val workManager: WorkManager get() = workManagerProvider()
 
     suspend fun snapshot(): List<ScheduledTask> {
@@ -45,16 +32,5 @@ internal class AndroidScheduledTaskQuery private constructor(
         val current = workManager.getWorkInfosFlow(query).firstOrNull() ?: return emptyList()
         val ephemeralIds = ephemeral.snapshot()
         return current.mapNotNull { info -> AndroidScheduledTaskMapper.toScheduledTask(info, ephemeralIds) }
-    }
-
-    internal companion object {
-        /**
-         * Lazy-WorkManager factory for the new [AndroidBackgrounderBuilder].
-         * The provider is invoked on every `snapshot()` call.
-         */
-        fun withProvider(
-            workManagerProvider: () -> WorkManager,
-            ephemeral: EphemeralRegistry,
-        ): AndroidScheduledTaskQuery = AndroidScheduledTaskQuery(workManagerProvider = workManagerProvider, ephemeral = ephemeral)
     }
 }

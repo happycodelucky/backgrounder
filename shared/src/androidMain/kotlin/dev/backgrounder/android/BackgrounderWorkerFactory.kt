@@ -24,6 +24,7 @@ import dev.backgrounder.WorkerRegistry
 internal class BackgrounderWorkerFactory(
     private val registry: WorkerRegistry,
     private val eventListener: BackgrounderEventListener,
+    private val readyGate: kotlinx.atomicfu.AtomicBoolean,
 ) : WorkerFactory() {
     override fun createWorker(
         appContext: Context,
@@ -36,6 +37,6 @@ internal class BackgrounderWorkerFactory(
         // is the documented pattern; `Class.forName(workerClassName)` would
         // load the class on every dispatch which we don't need.
         if (workerClassName != RegistryDispatchWorker::class.java.name) return null
-        return RegistryDispatchWorker(appContext, workerParameters, registry, eventListener)
+        return RegistryDispatchWorker(appContext, workerParameters, registry, eventListener, readyGate)
     }
 }

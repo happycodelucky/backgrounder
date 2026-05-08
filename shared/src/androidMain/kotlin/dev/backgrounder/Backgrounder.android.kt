@@ -7,14 +7,14 @@ import dev.backgrounder.android.AndroidBackgrounderBuilder
 import dev.backgrounder.android.AndroidBackgrounderInternals
 
 /**
- * Android factory for [BackgrounderInstance].
+ * Android factory for [Backgrounder].
  *
  * Hold the returned instance as a property on your `Application` subclass.
  * The standard wiring is:
  *
  * ```kotlin
  * class MyApp : Application(), Configuration.Provider {
- *     lateinit var backgrounder: BackgrounderInstance
+ *     lateinit var backgrounder: Backgrounder
  *
  *     override fun onCreate() {
  *         super.onCreate()
@@ -43,11 +43,11 @@ import dev.backgrounder.android.AndroidBackgrounderInternals
  *   `WorkManager.getInstance(application)` lookup. Most callers leave this
  *   `null` and let the library resolve via `getInstance` on first use.
  */
-public fun BackgrounderInstance.Companion.create(
+public fun Backgrounder.Companion.create(
     application: Application,
     eventListener: BackgrounderEventListener = BackgrounderEventListener.Noop,
     workManager: WorkManager? = null,
-): BackgrounderInstance =
+): Backgrounder =
     AndroidBackgrounderBuilder.build(
         application = application,
         eventListener = eventListener,
@@ -76,9 +76,9 @@ public fun BackgrounderInstance.Companion.create(
  *     .build()
  * ```
  *
- * @throws IllegalStateException if the [BackgrounderInstance] was constructed
- *   from outside [BackgrounderInstance.Companion.create] (e.g. directly via
- *   `BackgrounderInstance(core)` — not normally possible since the constructor
+ * @throws IllegalStateException if the [Backgrounder] was constructed
+ *   from outside [Backgrounder.Companion.create] (e.g. directly via
+ *   `Backgrounder(core)` — not normally possible since the constructor
  *   is `internal`, but tests sometimes find a way).
  */
-public fun BackgrounderInstance.androidWorkerFactory(): WorkerFactory = AndroidBackgrounderInternals.workerFactory(this)
+public fun Backgrounder.androidWorkerFactory(): WorkerFactory = AndroidBackgrounderInternals.workerFactory(this)

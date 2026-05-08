@@ -4,16 +4,16 @@
 package dev.backgrounder.ios
 
 import com.russhwolf.settings.NSUserDefaultsSettings
+import dev.backgrounder.Backgrounder
 import dev.backgrounder.BackgrounderCore
 import dev.backgrounder.BackgrounderEventListener
-import dev.backgrounder.BackgrounderInstance
 import dev.backgrounder.EphemeralRegistry
 import dev.backgrounder.WorkerRegistry
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.Foundation.NSUserDefaults
 
 /**
- * Constructor-injection wiring for the iOS [BackgrounderInstance] graph.
+ * Constructor-injection wiring for the iOS [Backgrounder] graph.
  *
  * Replaces the Koin module wiring in `backgrounderIOSModule` (plan §"DI-free
  * initialization" §2.1). Each platform piece is constructed in dependency
@@ -27,7 +27,7 @@ import platform.Foundation.NSUserDefaults
  * `NSUserDefaults` suite (cheap; idempotent).
  */
 internal object IOSBackgrounderBuilder {
-    fun build(eventListener: BackgrounderEventListener): BackgrounderInstance {
+    fun build(eventListener: BackgrounderEventListener): Backgrounder {
         val settings = NSUserDefaultsSettings(NSUserDefaults(suiteName = "dev.backgrounder.shared"))
         val ephemeral = EphemeralRegistry(settings)
         val state = IOSStateStore(settings)
@@ -59,7 +59,7 @@ internal object IOSBackgrounderBuilder {
         val sweep = IOSEphemeralSweep(ephemeral, state)
         val registration = BGTaskHandlerRegistration(registry, state, bridge)
 
-        return BackgrounderInstance(
+        return Backgrounder(
             BackgrounderCore(
                 registry = registry,
                 scheduler = scheduler,

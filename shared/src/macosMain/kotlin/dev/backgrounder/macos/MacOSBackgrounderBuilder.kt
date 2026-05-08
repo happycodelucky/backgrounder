@@ -4,16 +4,16 @@
 package dev.backgrounder.macos
 
 import com.russhwolf.settings.NSUserDefaultsSettings
+import dev.backgrounder.Backgrounder
 import dev.backgrounder.BackgrounderCore
 import dev.backgrounder.BackgrounderEventListener
-import dev.backgrounder.BackgrounderInstance
 import dev.backgrounder.EphemeralRegistry
 import dev.backgrounder.WorkerRegistry
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.Foundation.NSUserDefaults
 
 /**
- * Constructor-injection wiring for the macOS [BackgrounderInstance] graph.
+ * Constructor-injection wiring for the macOS [Backgrounder] graph.
  *
  * Replaces the Koin module wiring in `backgrounderMacOSModule` (plan §"DI-free
  * initialization" §2.2). The macOS graph is shorter than iOS's because
@@ -28,7 +28,7 @@ import platform.Foundation.NSUserDefaults
  * `shutdown()` cancels the scheduler's [kotlinx.coroutines.SupervisorJob]-rooted scope.
  */
 internal object MacOSBackgrounderBuilder {
-    fun build(eventListener: BackgrounderEventListener): BackgrounderInstance {
+    fun build(eventListener: BackgrounderEventListener): Backgrounder {
         val settings = NSUserDefaultsSettings(NSUserDefaults(suiteName = "dev.backgrounder.shared"))
         val ephemeral = EphemeralRegistry(settings)
         val registry = WorkerRegistry()
@@ -40,7 +40,7 @@ internal object MacOSBackgrounderBuilder {
                 eventListener = eventListener,
             )
 
-        return BackgrounderInstance(
+        return Backgrounder(
             BackgrounderCore(
                 registry = registry,
                 scheduler = scheduler,

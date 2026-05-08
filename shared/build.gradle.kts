@@ -105,11 +105,6 @@ kotlin {
             implementation(libs.multiplatform.settings)
             implementation(libs.multiplatform.settings.coroutines)
             implementation(libs.kermit)
-
-            // Koin core via BOM. Platform-specific Koin artifacts live in
-            // platform source sets where the dispatching infrastructure lives.
-            implementation(project.dependencies.platform(libs.koin.bom))
-            implementation(libs.koin.core)
         }
 
         commonTest.dependencies {
@@ -118,24 +113,17 @@ kotlin {
             implementation(libs.turbine)
             implementation(libs.multiplatform.settings.test)
             implementation(libs.kermit.test)
-            implementation(libs.koin.test)
         }
 
         androidMain.dependencies {
             implementation(libs.androidx.work.runtime)
             implementation(libs.androidx.startup.runtime)
             implementation(libs.kotlinx.coroutines.android)
-            implementation(libs.koin.android)
-            implementation(libs.koin.androidx.workmanager)
         }
 
-        // iOS / macOS reach into Koin's GlobalContext directly (in BackgrounderIos.kt /
-        // BackgrounderMacos.kt) to drive registerHandlers. commonMain only hides koin-core
-        // behind `implementation` scope, so platforms that touch GlobalContext directly
-        // need their own explicit dependency.
+        // appleMain (iOS + macOS) needs the no-arg multiplatform-settings
+        // companion artifact for `NSUserDefaultsSettings(NSUserDefaults(suiteName:))`.
         getByName("appleMain").dependencies {
-            implementation(project.dependencies.platform(libs.koin.bom))
-            implementation(libs.koin.core)
             implementation(libs.multiplatform.settings.no.arg)
         }
 

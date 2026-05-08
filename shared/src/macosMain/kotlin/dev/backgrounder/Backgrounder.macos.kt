@@ -5,7 +5,7 @@ import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
 /**
- * macOS factory for [BackgrounderInstance].
+ * macOS factory for [Backgrounder].
  *
  * Hold the returned instance for the lifetime of the app — typically as a
  * stored property on `AppDelegate`. The Swift call site reads:
@@ -19,11 +19,11 @@ import kotlin.native.ObjCName
  * @param eventListener observability hook for `onScheduled`, `onStarted`,
  *   `onCompleted`, `onCancelled`. Defaults to [BackgrounderEventListener.Noop].
  *
- * @return a constructed but not-yet-started [BackgrounderInstance]. Call
- *   [BackgrounderInstance.register] for every task id, then
- *   [BackgrounderInstance.start] from `applicationDidFinishLaunching`.
+ * @return a constructed but not-yet-started [Backgrounder]. Call
+ *   [Backgrounder.register] for every task id, then
+ *   [Backgrounder.start] from `applicationDidFinishLaunching`.
  *
- * Call [BackgrounderInstance.shutdown] from `applicationWillTerminate` to
+ * Call [Backgrounder.shutdown] from `applicationWillTerminate` to
  * cancel the scheduler's coroutine scope cleanly.
  *
  * `@OptIn(ExperimentalObjCName::class)`: required by SKIE for the
@@ -31,6 +31,5 @@ import kotlin.native.ObjCName
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName(swiftName = "create")
-public fun BackgrounderInstance.Companion.create(
-    eventListener: BackgrounderEventListener = BackgrounderEventListener.Noop,
-): BackgrounderInstance = MacOSBackgrounderBuilder.build(eventListener)
+public fun Backgrounder.Companion.create(eventListener: BackgrounderEventListener = BackgrounderEventListener.Noop): Backgrounder =
+    MacOSBackgrounderBuilder.build(eventListener)

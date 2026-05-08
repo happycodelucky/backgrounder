@@ -5,7 +5,7 @@ import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
 /**
- * iOS factory for [BackgrounderInstance].
+ * iOS factory for [Backgrounder].
  *
  * Hold the returned instance for the lifetime of the app — typically as a
  * stored property on `AppDelegate`. The Swift call site reads:
@@ -19,15 +19,14 @@ import kotlin.native.ObjCName
  * @param eventListener observability hook for `onScheduled`, `onStarted`,
  *   `onCompleted`, `onCancelled`. Defaults to [BackgrounderEventListener.Noop].
  *
- * @return a constructed but not-yet-started [BackgrounderInstance]. Call
- *   [BackgrounderInstance.register] for every task id, then
- *   [BackgrounderInstance.start] before the launch method returns.
+ * @return a constructed but not-yet-started [Backgrounder]. Call
+ *   [Backgrounder.register] for every task id, then
+ *   [Backgrounder.start] before the launch method returns.
  *
  * `@OptIn(ExperimentalObjCName::class)`: required by SKIE for the
  * Swift-rename annotation. Stable in practice.
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName(swiftName = "create")
-public fun BackgrounderInstance.Companion.create(
-    eventListener: BackgrounderEventListener = BackgrounderEventListener.Noop,
-): BackgrounderInstance = IOSBackgrounderBuilder.build(eventListener)
+public fun Backgrounder.Companion.create(eventListener: BackgrounderEventListener = BackgrounderEventListener.Noop): Backgrounder =
+    IOSBackgrounderBuilder.build(eventListener)
