@@ -6,7 +6,7 @@ hide:
 
 # Backgrounder
 
-**One Kotlin Multiplatform API for background work.** Schedule a job from `commonMain`; it runs on `WorkManager` on Android, on `BGTaskScheduler` on iOS, and on `NSBackgroundActivityScheduler` on native macOS — and lets your DI graph reach inside the worker the way Hilt's `@HiltWorker` does on Android.
+**One Kotlin Multiplatform API for background work.** Schedule a job from `commonMain`; it runs on `WorkManager` on Android, on `BGTaskScheduler` on iOS, and on `NSBackgroundActivityScheduler` on native macOS. No DI container required — workers are factory-built per dispatch from a closure you provide, so any DI graph you already have (Koin, Hilt, hand-wired) plugs in cleanly.
 
 ```kotlin
 // commonMain
@@ -21,7 +21,13 @@ class SyncWorker(private val repo: MyRepository) : BackgroundWorker {
     }
 }
 
-scheduler.schedule(
+// At app launch
+val backgrounder = Backgrounder.create(application = this)        // Android
+backgrounder.register(SyncWorker.ID) { SyncWorker(repo = appGraph.repo) }
+backgrounder.start()
+
+// Anywhere later
+backgrounder.scheduler.schedule(
     WorkRequest.OneTime(
         taskId = SyncWorker.ID,
         constraints = WorkConstraints(networkRequired = NetworkRequirement.Any),
@@ -33,9 +39,10 @@ scheduler.schedule(
 ## What it does
 
 - **One scheduling API** across platforms — `Scheduler.schedule()`, `cancel()`, `cancelAll()`, `scheduled()`.
-- **One worker contract** — `BackgroundWorker.execute(WorkerContext): WorkResult`. Use Koin (or any DI) to inject dependencies via the factory you register at app launch.
+- **One worker contract** — `BackgroundWorker.execute(WorkerContext): WorkResult`. Inject your dependencies through the factory closure you register at app launch.
 - **Sealed `WorkRequest`** — `OneTime` and `Periodic`, both with input data, constraints, retry, and an `ephemeral` flag for the "ran-before-init" Android foot-gun.
 - **Honest about platform differences.** `Scheduler.guarantees()` returns a per-platform truth table you can branch UX on.
+- **No required DI dependency.** Backgrounder doesn't ship a DI module. The factory closure pattern works equally well with Koin, Hilt (Android), kotlin-inject, or hand-wired graphs.
 
 ## Why this exists
 

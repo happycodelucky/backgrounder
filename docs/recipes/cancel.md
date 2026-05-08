@@ -1,7 +1,7 @@
 # Cancel work
 
 ```kotlin
-val outcome: CancelOutcome = scheduler.cancel(SyncWorker.ID)
+val outcome: CancelOutcome = backgrounder.scheduler.cancel(SyncWorker.ID)
 
 when (outcome) {
     is CancelOutcome.Cancelled -> log.i { "cleared ${outcome.pendingCleared} pending request(s)" }
@@ -12,7 +12,7 @@ when (outcome) {
 To cancel everything Backgrounder has scheduled:
 
 ```kotlin
-scheduler.cancelAll()
+backgrounder.scheduler.cancelAll()
 ```
 
 `cancelAll()` only cancels work this library scheduled (Android: matched by the canonical `_backgrounder` tag; iOS: enumerated from the library's state store). Other WorkManager / `BGTaskScheduler` work in your app is unaffected.

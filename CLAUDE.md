@@ -69,7 +69,7 @@ Everything else we author — classes, files, top-level functions, top-level `va
 
 **Concurrency:**
 
-- `kotlinx.coroutines` only. Every `CoroutineScope` has a clear owner with a defined cancellation lifecycle.
+- `kotlinx.coroutines` only. Every `CoroutineScope` has a clear owner with a defined cancellation lifecycle. The library's per-platform schedulers and the iOS coroutine bridge each own a `SupervisorJob`-rooted scope; `Backgrounder.shutdown()` is the documented cancellation handle. There are no top-level scopes.
 - No `GlobalScope`. Ever.
 - `Flow`/`StateFlow`/`SharedFlow` over callbacks and `LiveData`.
 - For shared mutable state guarded **across `suspend` boundaries**, use `kotlinx.coroutines.sync.Mutex` or actor-style coroutines.
@@ -118,13 +118,15 @@ A "Kotlin-first" library is written in Kotlin, designed for KMP, idiomatic (susp
 | I/O / buffers | **kotlinx.io** |
 | Immutable collections | **kotlinx.collections.immutable** |
 | Logging | **Kermit** (Touchlab) |
-| Dependency injection | **Koin** |
+| Dependency injection | **Koin** (recommended for the consumer's own graph; not required by the library) |
 | Database | **SQLDelight**, or **Room** |
 | Key-value storage | **multiplatform-settings** |
 | ViewModel | **androidx.lifecycle.viewmodel** 2.9+ |
 | DataStore | **androidx.datastore** 1.1+ |
 | Testing | **kotlin.test** + **Turbine** + **kotlinx.coroutines.test** |
 | Property tests | **Kotest** (when invariants are clear) |
+
+**DI is a user choice.** Library code in `:shared` uses constructor injection — no `Module`, no service locator, no top-level `KoinPlatform.getKoin()` reads. The consumer's app graph is what wires the library's public types together. Koin is recommended for the consumer's own graph; alternatives (Hilt on Android, kotlin-inject, hand-wired) are equally supported. The library *itself* must not introduce a runtime dependency on a DI container.
 
 ### Step 2 — KMP-capable third-party
 

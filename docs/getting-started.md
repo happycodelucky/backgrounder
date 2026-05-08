@@ -2,11 +2,11 @@
 
 Goal: a single working `BackgroundWorker` invocation from `commonMain`, dispatched by your platform's native scheduler.
 
-There are four steps regardless of platform; the concrete code per step changes a bit between Android, iOS, and macOS. We'll do all three together — pick the tab that matches the platform you're building for first.
+There are three steps regardless of platform: *create*, *register*, *start*. The concrete code per step changes a bit between Android, iOS, and macOS — pick the tab that matches the platform you're building for first.
 
 ## 1. Add Backgrounder to your build
 
-See [Installation](installation.md) for the version-catalog snippet and the platform-floor table. The short version is: add `dev.backgrounder:shared` to your `commonMain` dependencies, plus `dev.backgrounder:backgrounder-android` to `androidMain` if you target Android.
+See [Installation](installation.md) for the version-catalog snippet and the platform-floor table. The short version is: add `dev.backgrounder:shared` to your `commonMain` dependencies.
 
 ## 2. Define a `BackgroundWorker` in `commonMain`
 
@@ -37,83 +37,86 @@ class SyncWorker(
 }
 ```
 
-## 3. Register the worker factory at app launch
+## 3. Wire up the launch sequence
 
-This is the **DI seam**. The factory closes over your DI graph (Koin's `GlobalContext` is shown here), so a fresh `SyncWorker` is built per invocation with all its dependencies wired:
+The library exposes a single `Backgrounder` instance you construct at app launch and hold for the app's lifetime. The three steps are: **`create`** the instance, **`register`** every worker factory, then **`start`** to finalize.
 
-```kotlin
-val registry = GlobalContext.get<WorkerRegistry>()
-registry.register(SyncWorker.ID) { SyncWorker(get()) }   // get() resolves from Koin
-```
-
-You'll do this *after* `startKoin { ... }` and *before* `Backgrounder.registerHandlers()` (iOS / macOS) / `Backgrounder.markReady()` (Android).
-
-## 4. Wire up the launch sequence
-
-The library needs to hook into your platform's app-launch lifecycle. The three platforms differ in what each step does, but the *order* is always the same: ephemeral sweep → start DI → register factories → tell the library it can dispatch.
+The factory closure you pass to `register(...)` is where DI happens — pass a closure that resolves dependencies from whatever DI graph your app already uses (Koin, Hilt, kotlin-inject, hand-wired). Backgrounder doesn't require or ship a DI container.
 
 === "Android"
 
     ```kotlin title="MyApp.kt — Application.onCreate"
-    class MyApp : Application() {
+    import androidx.work.Configuration
+    import dev.backgrounder.Backgrounder
+    import dev.backgrounder.androidWorkerFactory
+    import dev.backgrounder.create
+
+    class MyApp : Application(), Configuration.Provider {
+        lateinit var backgrounder: Backgrounder
+
         override fun onCreate() {
             super.onCreate()
 
-            // 1. Sweep ephemeral jobs BEFORE Koin starts.
-            Backgrounder.attachTo(this)
+            // 1. Construct. This eagerly sweeps any ephemeral work from prior
+            //    runs; it does NOT trigger WorkManager.getInstance(...) yet.
+            backgrounder = Backgrounder.create(application = this)
 
-            // 2. Start Koin with workManagerFactory().
-            startKoin {
-                androidContext(this@MyApp)
-                workManagerFactory()
-                modules(
-                    backgrounderCommonModule,
-                    backgrounderAndroidModule,
-                    /* your modules */,
-                )
+            // 2. Register every worker factory. The closure is yours — resolve
+            //    dependencies however you like (Koin, Hilt, hand-wired).
+            backgrounder.register(SyncWorker.ID) {
+                SyncWorker(repo = appGraph.repository)
             }
 
-            // 3. Register every BackgroundWorker factory.
-            val registry = GlobalContext.get<WorkerRegistry>()
-            registry.register(SyncWorker.ID) { SyncWorker(get()) }
-
-            // 4. Mark ready — clears the ephemeral-not-ready backstop.
-            Backgrounder.markReady()
+            // 3. Start. Seals the registry; flips the ready gate so workers
+            //    enqueued before this point may now dispatch.
+            backgrounder.start()
         }
+
+        // Tell WorkManager to use Backgrounder's WorkerFactory. Required.
+        override val workManagerConfiguration: Configuration get() =
+            Configuration.Builder()
+                .setWorkerFactory(backgrounder.androidWorkerFactory())
+                .build()
     }
     ```
 
-    Add to `AndroidManifest.xml` (disables WorkManager's auto-init so we control startup ordering):
+    Add to `AndroidManifest.xml` to disable WorkManager's default auto-init (required because we install our `WorkerFactory` via `Configuration.Provider`):
 
     ```xml
     <provider
-        android:name="androidx.work.impl.WorkManagerInitializer"
-        android:authorities="${applicationId}.workmanager-init"
-        tools:node="remove" />
+        android:name="androidx.startup.InitializationProvider"
+        android:authorities="${applicationId}.androidx-startup"
+        tools:node="merge">
+        <meta-data
+            android:name="androidx.work.WorkManagerInitializer"
+            android:value="androidx.startup"
+            tools:node="remove" />
+    </provider>
     ```
 
 === "iOS"
 
     ```swift title="AppDelegate.swift"
-    @main
-    class AppDelegate: UIResponder, UIApplicationDelegate {
+    final class AppDelegate: NSObject, UIApplicationDelegate {
+        let backgrounder = Backgrounder.companion.create()
+
         func application(
             _ application: UIApplication,
-            didFinishLaunchingWithOptions launchOptions:
+            didFinishLaunchingWithOptions options:
                 [UIApplication.LaunchOptionsKey: Any]?,
         ) -> Bool {
-            // 1. Start Koin with backgrounderCommonModule + backgrounderIOSModule.
-            KoinKt.doInitKoin(/* your platform module + Backgrounder modules */)
+            // 1. (already constructed as a stored property above)
 
-            // 2. Register every worker factory.
-            let registry = KoinPlatformKt.getKoin().get(WorkerRegistry.self)
-            registry.register(taskId: SyncWorker.companion.ID) {
-                SyncWorker(repo: /* injected */)
+            // 2. Register every worker factory. Resolve dependencies from
+            //    whatever DI graph your iOS app uses.
+            backgrounder.register(taskId: SyncWorker.companion.ID) {
+                SyncWorker(repo: AppGraph.shared.repository)
             }
 
-            // 3. registerHandlers — sweeps ephemeral state, registers
-            //    BGTaskScheduler launch handlers, and resurrects active periodics.
-            BackgrounderRuntime.shared.registerHandlers()
+            // 3. Start. Performs the iOS ephemeral sweep, registers
+            //    BGTaskScheduler launch handlers, and resurrects active
+            //    periodic tasks. Must run before this method returns.
+            backgrounder.start()
             return true
         }
     }
@@ -132,31 +135,33 @@ The library needs to hook into your platform's app-launch lifecycle. The three p
 === "macOS"
 
     ```swift title="AppDelegate.swift"
-    @main
-    class AppDelegate: NSObject, NSApplicationDelegate {
+    final class AppDelegate: NSObject, NSApplicationDelegate {
+        let backgrounder = Backgrounder.companion.create()
+
         func applicationDidFinishLaunching(_ notification: Notification) {
-            KoinKt.doInitKoin(/* + backgrounderMacOSModule */)
-            let registry = KoinPlatformKt.getKoin().get(WorkerRegistry.self)
-            registry.register(taskId: SyncWorker.companion.ID) {
-                SyncWorker(repo: /* injected */)
+            backgrounder.register(taskId: SyncWorker.companion.ID) {
+                SyncWorker(repo: AppGraph.shared.repository)
             }
-            BackgrounderRuntime.shared.registerHandlers()
+            backgrounder.start()
+        }
+
+        func applicationWillTerminate(_ notification: Notification) {
+            // Cancel the scheduler's coroutine scope cleanly.
+            backgrounder.shutdown()
         }
     }
     ```
 
     No `Info.plist` work needed; `NSBackgroundActivityScheduler` owns scheduling lifetime.
 
-## 5. Schedule
+## 4. Schedule
 
-From anywhere in your app:
+From anywhere in your app — pass `backgrounder.scheduler` down through your app graph as you would any service. Hold one reference; never re-resolve.
 
 ```kotlin
 import kotlin.time.Duration.Companion.seconds
 
-val scheduler = GlobalContext.get<Scheduler>()
-
-scheduler.schedule(
+backgrounder.scheduler.schedule(
     WorkRequest.OneTime(
         taskId = SyncWorker.ID,
         constraints = WorkConstraints(networkRequired = NetworkRequirement.Any),
@@ -170,6 +175,6 @@ The platform scheduler will dispatch the worker when its constraints are satisfi
 ## What's next
 
 - **[Recipes](recipes/one-shot.md)** — task-oriented "how to do X" pages.
-- **[Concepts → Worker context & DI](concepts/worker-context-and-di.md)** — the factory pattern in depth.
+- **[Concepts → Worker context & DI](concepts/worker-context-and-di.md)** — the factory pattern in depth, including Koin / Hilt / hand-wired examples.
 - **[Concepts → Ephemeral flag](concepts/ephemeral.md)** — defending against the "ran before init" Android foot-gun.
 - **[Platforms → Force-quit caveat (iOS)](platforms/force-quit.md)** — read before shipping iOS.

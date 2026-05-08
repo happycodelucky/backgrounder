@@ -1,7 +1,7 @@
 # Inspect scheduled work
 
 ```kotlin
-val tasks: List<ScheduledTask> = scheduler.scheduled()
+val tasks: List<ScheduledTask> = backgrounder.scheduler.scheduled()
 
 tasks.forEach { task ->
     println("${task.taskId} → ${task.kind} ${task.state} attempt=${task.attempt}")
