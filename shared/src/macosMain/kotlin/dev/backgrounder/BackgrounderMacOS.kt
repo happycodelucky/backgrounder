@@ -1,6 +1,7 @@
 package dev.backgrounder
 
 import co.touchlab.kermit.Logger
+import dev.backgrounder.macos.NSBackgroundActivityBackedScheduler
 import org.koin.mp.KoinPlatform
 
 private val log = Logger.withTag("Backgrounder")
@@ -30,4 +31,17 @@ internal actual fun platformRegisterHandlers() {
 
 internal actual fun platformMarkReady() {
     log.d { "markReady: no-op on macOS" }
+}
+
+internal actual fun platformShutdown() {
+    val koin = KoinPlatform.getKoinOrNull()
+    if (koin == null) {
+        log.d { "shutdown: Koin not started; nothing to tear down" }
+        return
+    }
+    // NSBackgroundActivityBackedScheduler owns its own SupervisorJob-rooted scope
+    // and exposes shutdown() that cancels it after invalidating outstanding activities.
+    koin.getOrNull<NSBackgroundActivityBackedScheduler>()?.shutdown()
+        ?: log.d { "shutdown: macOS scheduler not registered; nothing to tear down" }
+    log.i { "shutdown: macOS scheduler cancelled" }
 }

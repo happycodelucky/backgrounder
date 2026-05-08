@@ -54,10 +54,14 @@ public val backgrounderIOSModule: Module =
                 state = get(),
                 mutexes = get(),
                 eventListener = get(),
-                applyResult = { task, taskId, attempt, result ->
-                    get<BGTaskBackedScheduler>().applyResult(task, taskId, attempt, result)
+                applyResult = { task, taskId, attempt, result, guard ->
+                    get<BGTaskBackedScheduler>().applyResult(task, taskId, attempt, result, guard)
                 },
             )
+            // CLAUDE.md §3: the bridge's CoroutineScope is owned by this Koin single,
+            // and `Backgrounder.shutdown()` is the documented cancellation handle.
+            // Resolving and cancelling via `KoinPlatform.getKoin().get<IOSCoroutineBridge>().shutdown()`
+            // happens in `BackgrounderIOS.platformShutdown` — see Backgrounder.kt.
         }
 
         single { IOSEphemeralSweep(get<EphemeralRegistry>(), get<IOSStateStore>()) }

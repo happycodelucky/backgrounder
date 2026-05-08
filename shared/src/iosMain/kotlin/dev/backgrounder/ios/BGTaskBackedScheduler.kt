@@ -8,6 +8,7 @@ import co.touchlab.kermit.Logger
 import dev.backgrounder.BackgrounderEventListener
 import dev.backgrounder.BackoffPolicy
 import dev.backgrounder.CancelOutcome
+import dev.backgrounder.CompletionGuard
 import dev.backgrounder.ConflictPolicy
 import dev.backgrounder.EphemeralRegistry
 import dev.backgrounder.ExecutionHint
@@ -43,30 +44,44 @@ internal class BGTaskBackedScheduler(
 ) : Scheduler {
     private val log = Logger.withTag("Backgrounder/iOS/Scheduler")
 
-    /** Used by the handler bridge after a worker returns. Wired through the Koin module. */
+    /**
+     * Used by the handler bridge after a worker returns. Wired through the Koin module.
+     *
+     * The [guard] is created per BGTask invocation by [IOSCoroutineBridge] and threaded
+     * through every code path that can call `setTaskCompletedWithSuccess`. Apple raises
+     * a fatal assertion when that method is called twice on the same `BGTask`; the
+     * guard makes the second-and-later attempts no-ops. This protects against:
+     *
+     *  - the worker completing successfully and `applyResult` calling completion,
+     *    while a near-simultaneous BGTask expiration races into the
+     *    `invokeOnCompletion` fallback in [IOSCoroutineBridge];
+     *  - the cancel-won-the-race path (active=false) where we still need to tell
+     *    iOS the task finished, even though we didn't reschedule.
+     */
     internal suspend fun applyResult(
         task: BGTask,
         taskId: TaskId,
         attempt: Int,
         result: WorkResult,
+        guard: CompletionGuard,
     ) {
         mutexes.withMutex(taskId) {
             state.recordRun(taskId, result)
             val active = state.readActive(taskId)
 
-            when (val kind = state.readKind(taskId)) {
+            when (state.readKind(taskId)) {
                 IOSStateStore.Kind.OneShot -> {
-                    handleOneShotResult(task, taskId, attempt, result, active)
+                    handleOneShotResult(task, taskId, attempt, result, active, guard)
                 }
 
                 IOSStateStore.Kind.Periodic -> {
-                    handlePeriodicResult(task, taskId, attempt, result, active)
+                    handlePeriodicResult(task, taskId, attempt, result, active, guard)
                 }
 
                 null -> {
                     log.w { "applyResult for unknown task id $taskId; marking iOS task complete" }
                     mutexes.forget(taskId)
-                    runCatching { task.setTaskCompletedWithSuccess(result is WorkResult.Success) }
+                    guard.runOnce { task.setTaskCompletedWithSuccess(result is WorkResult.Success) }
                 }
             }
         }
@@ -78,6 +93,7 @@ internal class BGTaskBackedScheduler(
         attempt: Int,
         result: WorkResult,
         active: Boolean,
+        guard: CompletionGuard,
     ) {
         when (result) {
             WorkResult.Success, is WorkResult.Failure -> {
@@ -85,13 +101,13 @@ internal class BGTaskBackedScheduler(
                 state.clear(taskId)
                 ephemeral.remove(taskId)
                 mutexes.forget(taskId)
-                runCatching { task.setTaskCompletedWithSuccess(result is WorkResult.Success) }
+                guard.runOnce { task.setTaskCompletedWithSuccess(result is WorkResult.Success) }
             }
 
             WorkResult.Retry -> {
                 if (!active) {
                     log.i { "$taskId one-shot Retry but active=false (cancel won the race); not resubmitting" }
-                    runCatching { task.setTaskCompletedWithSuccess(true) }
+                    guard.runOnce { task.setTaskCompletedWithSuccess(true) }
                     return
                 }
                 val backoff = backoffPolicyForRetry(taskId)
@@ -102,7 +118,7 @@ internal class BGTaskBackedScheduler(
                     state.clear(taskId)
                     ephemeral.remove(taskId)
                     mutexes.forget(taskId)
-                    runCatching { task.setTaskCompletedWithSuccess(false) }
+                    guard.runOnce { task.setTaskCompletedWithSuccess(false) }
                     return
                 }
                 state.setAttempt(taskId, nextAttempt)
@@ -112,7 +128,7 @@ internal class BGTaskBackedScheduler(
                 val nextRun = IOSBackoffEmulation.nextRunEpochMs(backoff, attempt)
                 state.setNextRunEpochMs(taskId, nextRun)
                 resubmit(taskId, nextRun)
-                runCatching { task.setTaskCompletedWithSuccess(true) }
+                guard.runOnce { task.setTaskCompletedWithSuccess(true) }
             }
         }
     }
@@ -123,17 +139,18 @@ internal class BGTaskBackedScheduler(
         attempt: Int,
         result: WorkResult,
         active: Boolean,
+        guard: CompletionGuard,
     ) {
         if (!active) {
             log.i { "$taskId periodic but active=false (cancel won the race); not resubmitting" }
-            runCatching { task.setTaskCompletedWithSuccess(result is WorkResult.Success) }
+            guard.runOnce { task.setTaskCompletedWithSuccess(result is WorkResult.Success) }
             return
         }
         val intervalMs =
             state.readIntervalMs(taskId)
                 ?: run {
                     log.e { "$taskId periodic with no interval_ms; bailing out of state machine" }
-                    runCatching { task.setTaskCompletedWithSuccess(false) }
+                    guard.runOnce { task.setTaskCompletedWithSuccess(false) }
                     return
                 }
         when (result) {
@@ -142,7 +159,7 @@ internal class BGTaskBackedScheduler(
                 val nextRun = Clock.System.now().toEpochMilliseconds() + intervalMs
                 state.setNextRunEpochMs(taskId, nextRun)
                 resubmit(taskId, nextRun)
-                runCatching { task.setTaskCompletedWithSuccess(result is WorkResult.Success) }
+                guard.runOnce { task.setTaskCompletedWithSuccess(result is WorkResult.Success) }
             }
 
             WorkResult.Retry -> {
@@ -157,7 +174,7 @@ internal class BGTaskBackedScheduler(
                     val nextRun = Clock.System.now().toEpochMilliseconds() + intervalMs
                     state.setNextRunEpochMs(taskId, nextRun)
                     resubmit(taskId, nextRun)
-                    runCatching { task.setTaskCompletedWithSuccess(false) }
+                    guard.runOnce { task.setTaskCompletedWithSuccess(false) }
                     return
                 }
                 state.setAttempt(taskId, nextAttempt)
@@ -165,7 +182,7 @@ internal class BGTaskBackedScheduler(
                 val nextRun = IOSBackoffEmulation.nextRunEpochMs(backoff, attempt)
                 state.setNextRunEpochMs(taskId, nextRun)
                 resubmit(taskId, nextRun)
-                runCatching { task.setTaskCompletedWithSuccess(true) }
+                guard.runOnce { task.setTaskCompletedWithSuccess(true) }
             }
         }
     }
@@ -301,8 +318,14 @@ internal class BGTaskBackedScheduler(
             BGTaskScheduler.sharedScheduler.cancelAllTaskRequests()
             return CancelOutcome.NoSuchTask
         }
+        // C-3: mirror the single-task `cancel()` ordering. Set `active=false` BEFORE
+        // clearing state so an in-flight handler that wakes up between
+        // `cancelTaskRequestWithIdentifier` and `clear` reads `active=false` and
+        // takes the "cancel won the race" path rather than reading still-true state
+        // and resubmitting a task we just cancelled.
         ids.forEach { id ->
             BGTaskScheduler.sharedScheduler.cancelTaskRequestWithIdentifier(id.value)
+            state.setActive(id, false)
             state.clear(id)
             eventListener.onCancelled(id)
         }
