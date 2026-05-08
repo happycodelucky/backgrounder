@@ -37,10 +37,6 @@ kotlinx-io = "0.9.0"
 kotlinx-collections-immutable = "0.4.0"
 kotlinx-atomicfu = "0.32.1"
 
-# --- Koin -------------------------------------------------------------------
-# Use the BOM to keep koin-core, koin-android, koin-androidx-workmanager aligned.
-koin-bom = "4.1.0"
-
 # --- AndroidX ---------------------------------------------------------------
 androidx-work = "2.11.2"
 androidx-lifecycle = "2.10.0"
@@ -71,13 +67,6 @@ kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serializa
 kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinx-datetime" }
 kotlinx-collections-immutable = { module = "org.jetbrains.kotlinx:kotlinx-collections-immutable", version.ref = "kotlinx-collections-immutable" }
 kotlinx-atomicfu = { module = "org.jetbrains.kotlinx:atomicfu", version.ref = "kotlinx-atomicfu" }
-
-# --- Koin (versioned via koin-bom) ------------------------------------------
-koin-bom = { module = "io.insert-koin:koin-bom", version.ref = "koin-bom" }
-koin-core = { module = "io.insert-koin:koin-core" }
-koin-android = { module = "io.insert-koin:koin-android" }
-koin-androidx-workmanager = { module = "io.insert-koin:koin-androidx-workmanager" }
-koin-test = { module = "io.insert-koin:koin-test" }
 
 # --- AndroidX ---------------------------------------------------------------
 androidx-work-runtime = { module = "androidx.work:work-runtime", version.ref = "androidx-work" }

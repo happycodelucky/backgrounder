@@ -4,93 +4,103 @@ import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
 /**
- * Top-level lifecycle hooks. Platform actuals decide what each call does:
+ * The new constructed-instance entry point — held by the user's app graph for
+ * the app's lifetime. This will be renamed to `Backgrounder` when the legacy
+ * `object Backgrounder` is removed in the cut-over commit (plan §"DI-free
+ * initialization" §9, step 5).
  *
- * **Android** (`androidMain`):
- * - [attachTo] is the *first* call from `Application.onCreate`, **before**
- *   `startKoin`. It performs the ephemeral cold-launch sweep, cancelling any
- *   pending ephemeral work using `WorkManager.cancelUniqueWork`. After it
- *   returns the user starts Koin and registers worker factories.
- * - [registerHandlers] on Android does nothing other than seal the registry —
- *   WorkManager's bridge is wired through Koin's `WorkerFactory`. Provided for
- *   API symmetry with iOS / macOS.
- * - [markReady] flips an `AtomicBoolean` checked by `RegistryDispatchWorker`
- *   to backstop the rare race of WorkManager firing an ephemeral worker
- *   between [attachTo] and full app init.
+ * Three things hang off the instance:
+ *  - [scheduler]: the `Scheduler` surface (`schedule`, `cancel`, …). Hold a
+ *    reference on the user's own app graph; never re-resolve.
+ *  - [register]: associate a `TaskId` with a factory closure that builds a
+ *    fresh `BackgroundWorker` per dispatch.
+ *  - [start]: finalize init (seals the registry; iOS/macOS run the ephemeral
+ *    sweep + register OS handlers + resurrect periodic schedules; Android
+ *    flips the not-ready backstop). Idempotent.
+ *  - [shutdown]: tear down library-owned coroutine scopes (iOS / macOS).
+ *    Android is a no-op. Safe to call repeatedly.
  *
- * **iOS / macOS** (`appleMain`):
- * - [attachTo] is a no-op (Android-only concept).
- * - [registerHandlers] is the *only* call from
- *   `application(_:didFinishLaunchingWithOptions:)` /
- *   `applicationDidFinishLaunching`. It runs the ephemeral sweep, registers
- *   `BGTaskScheduler` / `NSBackgroundActivityScheduler` handlers for every
- *   id in [WorkerRegistry.registeredIds], and resurrects any active periodic
- *   tasks. Must run before the launch method returns.
- * - [markReady] is a no-op (no JobScheduler-fires-during-init race on Apple).
+ * Construct via the per-platform extension factory:
+ *   - `androidMain`: [Backgrounder.Companion.create] taking an `Application`.
+ *   - `iosMain`: [Backgrounder.Companion.create] (no required args).
+ *   - `macosMain`:   [Backgrounder.Companion.create] (no required args).
  *
- * `@OptIn(ExperimentalObjCName::class)`: standard Swift-rename annotation;
- * stable in practice and required by SKIE for boundary refinement.
+ * `@OptIn(ExperimentalObjCName::class)`: standard SKIE annotation; stable in
+ * practice and required for boundary refinement (CLAUDE.md §8).
  */
 @OptIn(ExperimentalObjCName::class)
-@ObjCName(swiftName = "BackgrounderRuntime")
-public object Backgrounder {
+@ObjCName(swiftName = "Backgrounder")
+public class Backgrounder internal constructor(
+    private val core: BackgrounderCore,
+) {
     /**
-     * Android-only entry point. Pass your `Application` (cast as [Any] in
-     * `commonMain` — the Android actual narrows). On non-Android targets this
-     * is a no-op, kept for API symmetry.
+     * The scheduling surface. Hold this on your app graph; passing it down is
+     * the recommended way to expose scheduling capability to the rest of the
+     * app without re-resolving from a singleton.
      */
-    @ObjCName(swiftName = "attachTo")
-    public fun attachTo(application: Any?) {
-        platformAttachTo(application)
+    @ObjCName(swiftName = "scheduler")
+    public val scheduler: Scheduler get() = core.scheduler
+
+    /**
+     * Register a [BackgroundWorker] factory for [taskId]. Must be called
+     * before [start]. Throws if [start] has already run or [taskId] is
+     * already registered.
+     *
+     * The factory closes over the user's DI graph (Koin, Hilt, hand-wired,
+     * any of them — the library doesn't care). Each dispatch invokes the
+     * factory afresh; workers are never cached.
+     *
+     * @throws IllegalStateException if [start] has already run.
+     * @throws IllegalArgumentException if [taskId] is already registered.
+     */
+    @ObjCName(swiftName = "register")
+    @Throws(IllegalStateException::class, IllegalArgumentException::class)
+    public fun register(
+        taskId: TaskId,
+        factory: () -> BackgroundWorker,
+    ) {
+        core.registry.register(taskId, factory)
     }
 
     /**
-     * Register OS-level handlers. Must be called once at app launch *after*
-     * [WorkerRegistry.register]ing every factory and *before* the launch method
-     * returns.
+     * Finalize initialization. After this call:
+     *   - the registry is sealed; further [register] calls throw;
+     *   - iOS / macOS perform the ephemeral sweep and register OS handlers;
+     *   - Android clears the not-ready backstop so workers that fire from
+     *     this point onwards may dispatch.
+     *
+     * Idempotent — repeated calls are no-ops. Call exactly once at app launch.
      */
-    @ObjCName(swiftName = "registerHandlers")
-    public fun registerHandlers() {
-        platformRegisterHandlers()
+    @ObjCName(swiftName = "start")
+    public fun start() {
+        core.start()
     }
 
     /**
-     * Signal that any further app init the workers depend on is complete.
-     * Android: clears the ephemeral-not-ready backstop. iOS / macOS: no-op.
-     */
-    @ObjCName(swiftName = "markReady")
-    public fun markReady() {
-        platformMarkReady()
-    }
-
-    /**
-     * Tear down library-owned coroutine scopes.
+     * Tear down library-owned coroutine scopes (CLAUDE.md §3 — every scope has
+     * a clear owner with a defined cancellation lifecycle).
      *
-     * **iOS / macOS:** cancels the [kotlinx.coroutines.CoroutineScope] owned by
-     * the Apple-platform scheduler / coroutine bridge. CLAUDE.md §3 requires
-     * every `CoroutineScope` to have a clear owner with a defined cancellation
-     * lifecycle; this is that lifecycle hook. In-flight workers observe a
-     * `CancellationException` and the per-task completion guard reports the
-     * iOS-level task as `setTaskCompletedWithSuccess(false)` exactly once.
+     * **iOS / macOS:** cancels the scope owned by the platform scheduler /
+     * coroutine bridge. In-flight workers observe a `CancellationException`;
+     * the per-task completion guard reports the iOS-level task as
+     * `setTaskCompletedWithSuccess(false)` exactly once.
      *
-     * **Android:** no-op. WorkManager owns its own dispatch scope; the library
-     * does not hold one.
+     * **Android:** no-op. WorkManager owns its own dispatcher.
      *
-     * Safe to call multiple times. Typically called from app teardown — e.g. an
-     * iOS test's `tearDown`, or in production never, since the OS reclaims the
-     * process. The macOS desktop app should call this from
-     * `applicationWillTerminate`.
+     * Safe to call multiple times. Typically called from app teardown — e.g.
+     * an iOS test's `tearDown`, or from `applicationWillTerminate` on macOS.
      */
     @ObjCName(swiftName = "shutdown")
     public fun shutdown() {
-        platformShutdown()
+        core.shutdown()
     }
+
+    /**
+     * Companion object exists so per-platform source sets can install a
+     * `Backgrounder.Companion.create(...)` extension factory. (`commonMain`
+     * cannot define `create` because the Android variant requires an
+     * `Application` and the Apple variants don't — there's no common
+     * signature that doesn't leak `Any?`.)
+     */
+    public companion object
 }
-
-internal expect fun platformAttachTo(application: Any?)
-
-internal expect fun platformRegisterHandlers()
-
-internal expect fun platformMarkReady()
-
-internal expect fun platformShutdown()

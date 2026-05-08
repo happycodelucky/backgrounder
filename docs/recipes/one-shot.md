@@ -6,9 +6,7 @@ A one-shot job runs once. It survives process death and reboot (unless `ephemera
 import dev.backgrounder.*
 import kotlin.time.Duration.Companion.seconds
 
-val scheduler: Scheduler = GlobalContext.get()
-
-val outcome = scheduler.schedule(
+val outcome = backgrounder.scheduler.schedule(
     WorkRequest.OneTime(
         taskId = SyncWorker.ID,
         constraints = WorkConstraints(
@@ -31,7 +29,7 @@ when (outcome) {
 
 ## What can go wrong
 
-- **iOS Info.plist** — every `TaskId` you schedule must appear in `BGTaskSchedulerPermittedIdentifiers`. The library reports a Kermit error during `Backgrounder.registerHandlers()` if it's missing; rejected at `schedule()` time with `ScheduleOutcome.Rejected`.
+- **iOS Info.plist** — every `TaskId` you schedule must appear in `BGTaskSchedulerPermittedIdentifiers`. The library reports a Kermit error during `backgrounder.start()` if it's missing; rejected at `schedule()` time with `ScheduleOutcome.Rejected`.
 - **Constraints conflict on iOS** — `NetworkRequirement.Unmetered` is logged-and-ignored (iOS has no metered/unmetered distinction).
 - **Backoff policy with too-small initial delay** — minimum is 10 seconds, validated at construction.
 
@@ -40,8 +38,8 @@ when (outcome) {
 If a one-shot with the same `TaskId` is already pending:
 
 ```kotlin
-scheduler.schedule(request, policy = ConflictPolicy.Replace) // default — cancel pending, enqueue new
-scheduler.schedule(request, policy = ConflictPolicy.Keep)    // ignore new, keep pending
+backgrounder.scheduler.schedule(request, policy = ConflictPolicy.Replace) // default — cancel pending, enqueue new
+backgrounder.scheduler.schedule(request, policy = ConflictPolicy.Keep)    // ignore new, keep pending
 ```
 
 `Append` (Android chained-work semantics) is v2.

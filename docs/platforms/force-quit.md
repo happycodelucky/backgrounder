@@ -9,7 +9,7 @@ Apple treats force-quit as an explicit user signal: "I don't want this app runni
 
 This is **not** the same as the OS killing your process for memory pressure or system reboot. Those, the library handles fine — see [Architecture](../concepts/architecture.md):
 
-- **Process killed by OS** → state survives in `NSUserDefaults`; on next launch, the resurrection sweep in `Backgrounder.registerHandlers()` re-submits active periodic schedules.
+- **Process killed by OS** → state survives in `NSUserDefaults`; on next launch, the resurrection sweep in `backgrounder.start()` re-submits active periodic schedules.
 - **Device reboot** → same.
 - **User force-quits** → state survives, but **iOS refuses to dispatch handlers** until the user launches the app.
 
@@ -43,7 +43,7 @@ Concrete patterns:
 ## What the library does
 
 - Reports `survivesForceQuit = false` from `Scheduler.guarantees()`.
-- Logs a Kermit warning at info level if a periodic schedule's expected next-run is more than 24 hours stale on `Backgrounder.registerHandlers()` — likely sign of force-quit-then-relaunch.
+- Logs a Kermit warning at info level if a periodic schedule's expected next-run is more than 24 hours stale on `backgrounder.start()` — likely sign of force-quit-then-relaunch.
 - Resurrects active periodic schedules at next cold launch via `BGTaskScheduler.submit`. Force-quit drops the OS's pending-request set; the library re-submits.
 
 ## On Android and macOS

@@ -38,6 +38,7 @@ internal class RegistryDispatchWorker(
     params: WorkerParameters,
     private val registry: WorkerRegistry,
     private val eventListener: BackgrounderEventListener,
+    private val readyGate: kotlinx.atomicfu.AtomicBoolean,
 ) : CoroutineWorker(context, params) {
     private val log = Logger.withTag("Backgrounder")
 
@@ -50,13 +51,14 @@ internal class RegistryDispatchWorker(
 
         val tagged = log.withTag("Backgrounder/$taskId")
         // Capture inside doWork() — the worker's runtime thread can differ from
-        // the thread Koin instantiated us on. Restoring the field-init snapshot
-        // would set the wrong name on whatever pool thread doWork actually ran on.
+        // the thread WorkManager / our WorkerFactory instantiated us on. Restoring
+        // the field-init snapshot would set the wrong name on whatever pool thread
+        // doWork actually ran on.
         val originalThreadName = Thread.currentThread().name
         renameThread("Backgrounder/$taskId")
         try {
             val ephemeral = AndroidWorkInputMapper.readEphemeral(inputData)
-            val ready = AndroidEphemeralReady.snapshot()
+            val ready = readyGate.value
             if (ephemeral && !ready) {
                 tagged.w {
                     "fired before Backgrounder.markReady(); ephemeral request bailed " +

@@ -5,7 +5,7 @@ Periodic jobs repeat indefinitely until cancelled. The Android floor is **15 min
 ```kotlin
 import kotlin.time.Duration.Companion.minutes
 
-scheduler.schedule(
+backgrounder.scheduler.schedule(
     WorkRequest.Periodic(
         taskId = SyncWorker.ID,
         interval = 30.minutes,
@@ -29,7 +29,7 @@ iOS has no native repeating-task primitive — periodic is **library-emulated**:
 
 1. The handler runs the worker.
 2. Before calling `setTaskCompletedSuccess`, the library re-submits a fresh `BGTaskRequest` with `earliestBeginDate = now + interval`.
-3. State is persisted (`tasks.<id>.kind = "periodic"`, `active = true`, `interval_ms`, `last_run`) so a force-quit + cold-launch path can resurrect the schedule on the next `Backgrounder.registerHandlers()`.
+3. State is persisted (`tasks.<id>.kind = "periodic"`, `active = true`, `interval_ms`, `last_run`) so a force-quit + cold-launch path can resurrect the schedule on the next `backgrounder.start()`.
 
 The force-quit caveat still applies — see [Force-quit caveat (iOS)](../platforms/force-quit.md).
 

@@ -6,7 +6,7 @@ A Kotlin Multiplatform library that wraps platform background-scheduling primiti
 - **iOS 18+**: `BGTaskScheduler` (one-shot + library-emulated periodic; force-quit caveat documented).
 - **macOS 15+**: Foundation's `NSBackgroundActivityScheduler` (one-shot + native periodic).
 
-UI is out of scope (CLAUDE.md §1) — Backgrounder is the *headless* `:shared` KMP module. Each platform app consumes it natively.
+UI is out of scope (CLAUDE.md §1) — Backgrounder is the *headless* `:shared` KMP module. Each platform app consumes it natively. **No DI container is required** — the library uses constructor injection internally and a factory-closure seam for user code, so any DI graph you already use plugs in cleanly.
 
 > v1 deliberately ships a small, correct surface. Reactive `observe()`, an `ExecutionHint.LongRunning` for Android foreground-service work, fine-grained Android-only constraints, and a published `:testing` artifact are all v2 work — see the plan at `~/.claude/plans/on-android-there-is-vectorized-dawn.md`.
 
@@ -35,17 +35,15 @@ class SyncWorker(private val repo: MyRepository) : BackgroundWorker {
 The library never instantiates your worker by reflection — you give it a factory at app launch:
 
 ```kotlin
-val registry = GlobalContext.get<WorkerRegistry>()
-registry.register(SyncWorker.ID) { SyncWorker(get()) } // `get()` from Koin
+backgrounder.register(SyncWorker.ID) { SyncWorker(repo = appGraph.repo) }
 ```
 
-The factory closes over your DI graph, so a fresh `SyncWorker` is built per invocation with all its dependencies wired.
+The closure is yours: resolve dependencies through Koin, Hilt, kotlin-inject, hand-wired singletons — whatever your app already uses. A fresh `SyncWorker` is built per invocation with all its dependencies wired.
 
 Then schedule from anywhere:
 
 ```kotlin
-val scheduler = GlobalContext.get<Scheduler>()
-scheduler.schedule(
+backgrounder.scheduler.schedule(
     WorkRequest.OneTime(
         taskId = SyncWorker.ID,
         constraints = WorkConstraints(networkRequired = NetworkRequirement.Any),
@@ -58,74 +56,69 @@ scheduler.schedule(
 
 ## Launch sequence — Android
 
-`Application.onCreate` does **four** things, in this order:
+`Application.onCreate` does **three** things — *create*, *register*, *start* — plus one mandatory wiring: install Backgrounder's `WorkerFactory` via `Configuration.Provider`.
 
 ```kotlin
-class MyApp : Application() {
+import androidx.work.Configuration
+import dev.backgrounder.Backgrounder
+import dev.backgrounder.androidWorkerFactory
+import dev.backgrounder.create
+
+class MyApp : Application(), Configuration.Provider {
+    lateinit var backgrounder: Backgrounder
+
     override fun onCreate() {
         super.onCreate()
 
-        // 1. Sweep ephemeral jobs BEFORE Koin starts. Defends against the
-        //    JobScheduler-fires-during-init race for jobs marked
-        //    `WorkRequest(ephemeral = true)`.
-        Backgrounder.attachTo(this)
+        // 1. Construct. Eagerly sweeps ephemeral work from prior runs.
+        backgrounder = Backgrounder.create(application = this)
 
-        // 2. Start Koin with workManagerFactory() — koin-androidx-workmanager
-        //    wires RegistryDispatchWorker through Koin's WorkerFactory.
-        startKoin {
-            androidContext(this@MyApp)
-            workManagerFactory()
-            modules(
-                backgrounderCommonModule,
-                backgrounderAndroidModule,
-                /* your modules */,
-            )
-        }
+        // 2. Register every BackgroundWorker factory.
+        backgrounder.register(SyncWorker.ID) { SyncWorker(repo = appGraph.repo) }
 
-        // 3. Register every BackgroundWorker factory.
-        val registry = GlobalContext.get<WorkerRegistry>()
-        registry.register(SyncWorker.ID) { SyncWorker(get()) }
-        // ...
-
-        // 4. Mark ready — clears the ephemeral-not-ready backstop in
-        //    RegistryDispatchWorker.
-        Backgrounder.markReady()
+        // 3. Start. Seals the registry; flips the ready gate.
+        backgrounder.start()
     }
+
+    // Tell WorkManager to use Backgrounder's WorkerFactory. Required.
+    override val workManagerConfiguration: Configuration get() =
+        Configuration.Builder()
+            .setWorkerFactory(backgrounder.androidWorkerFactory())
+            .build()
 }
 ```
 
-Add to your app's `AndroidManifest.xml` (CLAUDE.md §10 — disables WorkManager's auto-init so we control startup ordering):
+Add to your app's `AndroidManifest.xml` to disable WorkManager's default auto-init (mandatory whenever you implement `Configuration.Provider`):
 
 ```xml
 <provider
-    android:name="androidx.work.impl.WorkManagerInitializer"
-    android:authorities="${applicationId}.workmanager-init"
-    tools:node="remove" />
+    android:name="androidx.startup.InitializationProvider"
+    android:authorities="${applicationId}.androidx-startup"
+    tools:node="merge">
+    <meta-data
+        android:name="androidx.work.WorkManagerInitializer"
+        android:value="androidx.startup"
+        tools:node="remove" />
+</provider>
 ```
 
 ---
 
 ## Launch sequence — iOS
 
-`AppDelegate.application(_:didFinishLaunchingWithOptions:)` does **three** things:
-
 ```swift
 @main
-class AppDelegate: UIResponder, UIApplicationDelegate {
+final class AppDelegate: NSObject, UIApplicationDelegate {
+    let backgrounder = Backgrounder.companion.create()
+
     func application(
         _ application: UIApplication,
-        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?,
+        didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]?,
     ) -> Bool {
-        // 1. Start Koin.
-        KoinKt.doInitKoin(/* your platform module + backgrounderCommonModule + backgrounderIOSModule */)
-
-        // 2. Register every worker factory (use the Kotlin lambda directly via SKIE).
-        let registry = KoinPlatformKt.getKoin().get(WorkerRegistry.self)
-        registry.register(taskId: SyncWorker.companion.ID) { SyncWorker(repo: ...) }
-
-        // 3. Register OS handlers — sweeps ephemeral state, registers
-        //    BGTaskScheduler launch handlers, and resurrects active periodics.
-        BackgrounderRuntime.shared.registerHandlers()
+        backgrounder.register(taskId: SyncWorker.companion.ID) {
+            SyncWorker(repo: AppGraph.shared.repository)
+        }
+        backgrounder.start()
         return true
     }
 }
@@ -141,7 +134,7 @@ Add every Backgrounder task id to your app's `Info.plist`:
 </array>
 ```
 
-Missing identifiers are reported with a Kermit error during `registerHandlers()` (close to the cause; not at first `schedule()`).
+Missing identifiers are reported with a Kermit error during `backgrounder.start()` (close to the cause; not at first `schedule()`).
 
 ### iOS testing
 
@@ -158,12 +151,18 @@ Background tasks don't fire automatically in the iOS Simulator. Drive them from 
 
 ```swift
 @main
-class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    let backgrounder = Backgrounder.companion.create()
+
     func applicationDidFinishLaunching(_ notification: Notification) {
-        KoinKt.doInitKoin(/* + backgrounderMacOSModule */)
-        let registry = KoinPlatformKt.getKoin().get(WorkerRegistry.self)
-        registry.register(taskId: SyncWorker.companion.ID) { SyncWorker(repo: ...) }
-        BackgrounderRuntime.shared.registerHandlers()
+        backgrounder.register(taskId: SyncWorker.companion.ID) {
+            SyncWorker(repo: AppGraph.shared.repository)
+        }
+        backgrounder.start()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        backgrounder.shutdown()
     }
 }
 ```
@@ -174,7 +173,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
 ## What each platform actually guarantees
 
-Read at runtime via `Scheduler.guarantees()`:
+Read at runtime via `backgrounder.scheduler.guarantees()`:
 
 |                              | Android `WorkManager` | iOS 18 `BGTaskScheduler` | macOS 15 `NSBackgroundActivityScheduler` |
 | ---------------------------- | --------------------- | ------------------------ | ---------------------------------------- |
@@ -196,10 +195,10 @@ iOS-specific: when the user **force-quits the app from the App Switcher**, all b
 `WorkRequest(ephemeral = true)` declares "this work must be re-scheduled by app code after init; do not run it from a state I didn't deliberately put it in." On every cold app start, the library cancels every ephemeral job *before* any worker can dispatch.
 
 Use it when the worker depends on app state initialised after `Application.onCreate` / `application(_:didFinishLaunchingWithOptions:)`. The sweep happens at:
-- **Android**: top of `Backgrounder.attachTo`, before Koin starts.
-- **iOS / macOS**: top of `Backgrounder.registerHandlers`.
+- **Android**: inside `Backgrounder.create(application)`, before any worker can dispatch.
+- **iOS / macOS**: top of `backgrounder.start()`.
 
-On Android, the sweep is augmented by an `ephemeralReady` backstop: if WorkManager somehow fires an ephemeral worker before `Backgrounder.markReady()` has been called, the worker returns `Failure("dispatched before ephemeralReady")` immediately rather than running with stale state.
+On Android, the sweep is augmented by a per-instance ready gate: if WorkManager somehow fires an ephemeral worker before `backgrounder.start()` has been called, the worker returns `Failure("dispatched before ephemeralReady")` immediately rather than running with stale state.
 
 ---
 
@@ -214,9 +213,7 @@ On Android, the sweep is augmented by an `ephemeralReady` backstop: if WorkManag
 `./gradlew check` runs:
 - `iosSimulatorArm64Test` — kotlin-test + Turbine + multiplatform-settings test impl
 - `macosArm64Test` — same suite, native macOS
-- `testAndroidHostTest` — JVM-side tests via Robolectric-free pure mappers + AtomicBoolean checks
-
-Test counts as of the v1 milestone: 39 commonTest + 8 androidHostTest = 47 tests.
+- `testAndroidHostTest` — JVM-side tests via Robolectric-free pure mappers
 
 ---
 
@@ -225,5 +222,6 @@ Test counts as of the v1 milestone: 39 commonTest + 8 androidHostTest = 47 tests
 - **Versions** (`gradle/libs.versions.toml`) are the single source of truth. Web-search before bumping any dependency (CLAUDE.md §2). Kotlin is pinned at the highest version SKIE supports — currently 2.3.20 with SKIE 0.10.11.
 - Every `suspend fun` reachable from Swift carries `@Throws(CancellationException::class)`; every public method carries `@ObjCName(swiftName = ...)` so the call site reads like Swift (CLAUDE.md §8).
 - `internal` by default; widen visibility only when needed (CLAUDE.md §3).
+- **DI is a user choice.** The library uses constructor injection internally and a factory-closure seam for user code; no DI container is required.
 
 See [`CLAUDE.md`](./CLAUDE.md) for the full project conventions.

@@ -13,11 +13,19 @@ import kotlinx.coroutines.flow.firstOrNull
  * work the user might have scheduled with the same `WorkManager` instance.
  * The pure WorkInfo → ScheduledTask transform lives in
  * [AndroidScheduledTaskMapper] and is unit-tested independently of WorkManager.
+ *
+ * The `WorkManager` dependency is held as a `() -> WorkManager` provider so
+ * we don't trigger `WorkManager.getInstance(...)` at construction time —
+ * resolving early would lock the WorkManager configuration before the user's
+ * `Configuration.Provider.workManagerConfiguration` had a chance to install
+ * our [BackgrounderWorkerFactory] (plan §"DI-free initialization" §2.3).
  */
 internal class AndroidScheduledTaskQuery(
-    private val workManager: WorkManager,
+    private val workManagerProvider: () -> WorkManager,
     private val ephemeral: EphemeralRegistry,
 ) {
+    private val workManager: WorkManager get() = workManagerProvider()
+
     suspend fun snapshot(): List<ScheduledTask> {
         val query = WorkQuery.Builder.fromTags(listOf(AndroidScheduledTaskMapper.BACKGROUNDER_TAG)).build()
         // getWorkInfosFlow emits a current snapshot immediately — we want exactly that.

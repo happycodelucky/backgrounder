@@ -40,9 +40,11 @@ If your app is itself a Kotlin Multiplatform project, depend on the `shared` art
     }
     ```
 
+Backgrounder pulls `kotlinx.coroutines`, `kotlinx.serialization`, `multiplatform-settings`, `kermit`, and (on Android only) `androidx.work-runtime` + `androidx.startup-runtime` transitively. **No DI container is required** — the library uses constructor injection internally and a factory-closure seam for user code, so any DI graph you already use plugs in cleanly.
+
 ## Android-only consumer
 
-If your app is Android-only (not a KMP project), depend on the published Android artifact. It pulls `WorkManager` and `koin-androidx-workmanager` transitively.
+If your app is Android-only (not a KMP project), depend on the published Android artifact:
 
 ```kotlin
 dependencies {
@@ -50,13 +52,18 @@ dependencies {
 }
 ```
 
-Add this to your `AndroidManifest.xml` so WorkManager doesn't auto-start before we sweep ephemeral work:
+You'll need to install Backgrounder's `WorkerFactory` via `Configuration.Provider` (mandatory; see [Platforms → Android](platforms/android.md) for the full launch-sequence snippet) and disable WorkManager's default auto-init in your `AndroidManifest.xml`:
 
 ```xml
 <provider
-    android:name="androidx.work.impl.WorkManagerInitializer"
-    android:authorities="${applicationId}.workmanager-init"
-    tools:node="remove" />
+    android:name="androidx.startup.InitializationProvider"
+    android:authorities="${applicationId}.androidx-startup"
+    tools:node="merge">
+    <meta-data
+        android:name="androidx.work.WorkManagerInitializer"
+        android:value="androidx.startup"
+        tools:node="remove" />
+</provider>
 ```
 
 ## iOS consumer (Swift Package Manager)
@@ -77,7 +84,7 @@ Add every Backgrounder task id to `Info.plist`:
 </array>
 ```
 
-The library reports a Kermit error during `registerHandlers()` for any task id missing from this list — failing close to the cause rather than at first `schedule()`.
+The library reports a Kermit error during `backgrounder.start()` for any task id missing from this list — failing close to the cause rather than at first `schedule()`.
 
 ## macOS consumer
 
@@ -103,8 +110,7 @@ Xcode will pick up the local `XCFramework` on the next build — no publish step
 After the launch sequence in [Getting started](getting-started.md) is in place, this snippet should compile and run on every platform:
 
 ```kotlin
-val scheduler = GlobalContext.get<Scheduler>()
-println(scheduler.guarantees())
+println(backgrounder.scheduler.guarantees())
 ```
 
 Output (truncated, platform-dependent — see [Guarantees](concepts/guarantees.md)):

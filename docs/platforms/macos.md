@@ -2,24 +2,28 @@
 
 ```swift
 @main
-class AppDelegate: NSObject, NSApplicationDelegate {
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        // 1. Start Koin with backgrounderCommonModule + backgrounderMacOSModule.
-        KoinKt.doInitKoin(/* + backgrounderMacOSModule */)
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    // 1. Construct.
+    let backgrounder = Backgrounder.companion.create()
 
+    func applicationDidFinishLaunching(_ notification: Notification) {
         // 2. Register every worker factory.
-        let registry = KoinPlatformKt.getKoin().get(WorkerRegistry.self)
-        registry.register(taskId: SyncWorker.companion.ID) {
-            SyncWorker(repo: /* injected */)
+        backgrounder.register(taskId: SyncWorker.companion.ID) {
+            SyncWorker(repo: AppGraph.shared.repository)
         }
 
-        // 3. registerHandlers — seals the registry and sweeps ephemeral state.
-        BackgrounderRuntime.shared.registerHandlers()
+        // 3. Start — sweeps ephemeral state and seals the registry.
+        backgrounder.start()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // Cancel the scheduler's coroutine scope cleanly.
+        backgrounder.shutdown()
     }
 }
 ```
 
-`NSBackgroundActivityScheduler` owns scheduling lifetime entirely, so unlike iOS there's no per-cold-launch handler-registration ceremony. `registerHandlers()` does just two things on macOS:
+`NSBackgroundActivityScheduler` owns scheduling lifetime entirely, so unlike iOS there's no per-cold-launch handler-registration ceremony. `start()` does just two things on macOS:
 
 1. Sweep ephemeral state.
 2. Seal the `WorkerRegistry` so further `register()` calls throw.
@@ -36,4 +40,8 @@ macOS doesn't need the iOS periodic-emulation state machine. `NSBackgroundActivi
 
 ## Force-quit isn't a problem
 
-Unlike iOS, force-quitting a macOS app doesn't disable background scheduling for the next launch. The active schedulers re-establish themselves when the user re-launches the app and `registerHandlers()` runs again.
+Unlike iOS, force-quitting a macOS app doesn't disable background scheduling for the next launch. The active schedulers re-establish themselves when the user re-launches the app and `backgrounder.start()` runs again.
+
+## Shutdown
+
+`backgrounder.shutdown()` cancels the scheduler's `SupervisorJob`-rooted scope. Call from `applicationWillTerminate` to tear down cleanly. Without it, in-flight workers continue until the OS reclaims the process — for a foreground app being explicitly quit, that's a few extra seconds of work that never matters; for a long-lived agent it can leave file handles open. Always pair with `applicationWillTerminate`.

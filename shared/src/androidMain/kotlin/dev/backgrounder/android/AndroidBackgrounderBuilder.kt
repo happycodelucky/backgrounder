@@ -1,0 +1,94 @@
+package dev.backgrounder.android
+
+import android.app.Application
+import android.content.Context
+import androidx.work.WorkManager
+import com.russhwolf.settings.SharedPreferencesSettings
+import dev.backgrounder.Backgrounder
+import dev.backgrounder.BackgrounderCore
+import dev.backgrounder.BackgrounderEventListener
+import dev.backgrounder.EphemeralRegistry
+import dev.backgrounder.WorkerRegistry
+import kotlinx.atomicfu.atomic
+
+/**
+ * Constructor-injection wiring for the Android [Backgrounder] graph.
+ *
+ * Plan §"DI-free initialization" §2.3. Two notable differences from the
+ * iOS / macOS builders:
+ *
+ *  1. The `WorkManager` resolution is **lazy** — eager-resolving here would
+ *     trigger `WorkManager.getInstance(context)` before the user's
+ *     `Configuration.Provider.workManagerConfiguration` had a chance to
+ *     install our [BackgrounderWorkerFactory]. The provider is called on
+ *     every `schedule` / `cancel` instead.
+ *  2. The ephemeral sweep runs **eagerly** at construction time — it must
+ *     happen before any worker can dispatch (plan §2.3).
+ *
+ * Each [Backgrounder] owns its own ready-gate `AtomicBoolean`. The
+ * gate is shared with the [BackgrounderWorkerFactory] (and therefore with
+ * any [RegistryDispatchWorker] WorkManager spins up via that factory), so
+ * the worker's "fired before markReady" check sees the same flag the
+ * builder controls. `start()` flips it `true`; the gate persists for the
+ * process lifetime of this `Backgrounder`.
+ */
+internal object AndroidBackgrounderBuilder {
+    fun build(
+        application: Application,
+        eventListener: BackgrounderEventListener,
+        suppliedWorkManager: WorkManager?,
+    ): Backgrounder {
+        val settings =
+            SharedPreferencesSettings(
+                application.getSharedPreferences("backgrounder.prefs", Context.MODE_PRIVATE),
+            )
+        val ephemeral = EphemeralRegistry(settings)
+        val registry = WorkerRegistry()
+
+        // Eager ephemeral sweep — first thing we do, before any worker can fire.
+        AndroidEphemeralSweep(application, ephemeral).run()
+
+        // Per-instance ready gate. Replaces the old top-level
+        // `AndroidEphemeralReady` singleton: each Backgrounder holds its own,
+        // shared with its WorkerFactory + the dispatch worker via constructor
+        // injection. `start()` flips it true.
+        val readyGate = atomic(false)
+
+        // Lazy: do NOT call WorkManager.getInstance(application) here. If we
+        // did, it would lock the WorkManager configuration to whatever's
+        // currently registered — but the user installs our factory via
+        // `Configuration.Provider`, which only runs the FIRST time anyone
+        // calls `getInstance`. Resolve at use-time instead.
+        val workManagerProvider: () -> WorkManager = { suppliedWorkManager ?: WorkManager.getInstance(application) }
+
+        val scheduledTaskQuery = AndroidScheduledTaskQuery(workManagerProvider, ephemeral)
+        val scheduler =
+            WorkManagerScheduler(
+                workManagerProvider = workManagerProvider,
+                ephemeral = ephemeral,
+                eventListener = eventListener,
+                scheduledTaskQuery = scheduledTaskQuery,
+            )
+        val factory = BackgrounderWorkerFactory(registry, eventListener, readyGate)
+
+        val backgrounder =
+            Backgrounder(
+                BackgrounderCore(
+                    registry = registry,
+                    scheduler = scheduler,
+                    onStart = {
+                        // Plan §1.1: `start()` flips the ready gate so workers
+                        // that were enqueued (but blocked by the
+                        // ephemeral-not-ready backstop) can now run.
+                        readyGate.value = true
+                    },
+                    onShutdown = {
+                        // No-op on Android — WorkManager owns its own dispatch
+                        // scope. Plan §1.1 / SchedulerGuarantees.
+                    },
+                ),
+            )
+        AndroidBackgrounderInternals.attach(backgrounder, factory)
+        return backgrounder
+    }
+}

@@ -32,7 +32,7 @@ import androidx.work.WorkRequest as AndroidWorkRequest
  * see plan §"Why one bridge worker for all task ids."
  */
 internal class WorkManagerScheduler(
-    private val workManager: WorkManager,
+    private val workManagerProvider: () -> WorkManager,
     private val ephemeral: EphemeralRegistry,
     private val eventListener: BackgrounderEventListener,
     private val scheduledTaskQuery: AndroidScheduledTaskQuery,
@@ -44,6 +44,12 @@ internal class WorkManagerScheduler(
      */
     private val scheduledIds: ScheduledIdsTracker = ScheduledIdsTracker(),
 ) : Scheduler {
+    /**
+     * `WorkManager.getInstance(context)` is itself a fast singleton lookup once
+     * the configuration is locked, so per-call invocation is cheap.
+     */
+    private val workManager: WorkManager get() = workManagerProvider()
+
     private val log = Logger.withTag("Backgrounder/WorkManagerScheduler")
 
     override fun schedule(
