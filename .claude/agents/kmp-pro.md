@@ -92,9 +92,16 @@ For every public-from-Swift declaration in `commonMain` or `iosMain`:
 
 5. **No callback-typed public parameters** in commonMain. Use `Flow`/`SharedFlow`/sealed-result-`suspend`.
 
-6. **No `Result<T>` at the boundary.** Use a named sealed interface (e.g. `Outcome.Success` / `Outcome.Failure`).
+6. **No `kotlin.Result<T>` at the boundary.** SKIE does not bridge `kotlin.Result<T>` to Swift's `Result<Success, Failure>` — generic erasure differs, and Swift's `Failure: Error` constraint isn't satisfied. What Swift sees is an opaque `KotlinResult` wrapper: no exhaustive `switch`, no `try?` integration, no value-type semantics. There is no KMP-friendly `Result` replacement library — don't shop for one. Use a project-defined `sealed interface` (e.g. `WorkResult`, `ScheduleOutcome`, `CancelOutcome` in `shared/src/commonMain/kotlin/dev/backgrounder/`); SKIE renders it as an exhaustive Swift `enum` via `onEnum(of:)`, which is *richer* than Swift's two-case `Result` because cases carry arbitrary payloads.
 
-7. **No `Pair`/`Triple`** in public API. Define a `data class`.
+   **Detection rules — apply during review:**
+   - Flag any `public fun` / `public suspend fun` whose return type contains `Result<` (regardless of the generic argument) in `commonMain`, `appleMain`, `iosMain`, or `macosMain`. Cite as a violation of CLAUDE.md §8 "Sealed result types over `kotlin.Result<T>`".
+   - Flag any `: Result<...>` in a `public val` / `public var` declaration in those source sets.
+   - Flag any `Flow<Result<...>>` / `StateFlow<Result<...>>` / `SharedFlow<Result<...>>` in a public declaration — same root cause, same fix.
+   - **Internal `runCatching` is fine.** The rule is about the return-type at the public boundary. `runCatching { ... }.getOrElse { ... }` inside an `internal` function, folded into a sealed outcome before return, is not a finding.
+   - Confidence floor for this finding: **≥ 90**. It's a hard rule, not a judgement call. Cite file:line and quote the offending signature.
+
+7. **No `Pair` / `Triple` in public API.** Same root cause as rule 6 — opaque generic wrapper, no exhaustivity, no name on the fields. Define a `data class`. Apply the same detection: any `public` declaration in `commonMain` / `appleMain` / `iosMain` / `macosMain` whose return type or property type is `Pair<…>` / `Triple<…>`. Confidence ≥ 90.
 
 8. **No companion-object factories** for Swift-facing entry points.
 
