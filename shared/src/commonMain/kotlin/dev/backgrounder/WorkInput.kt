@@ -25,8 +25,28 @@ public class WorkInput private constructor(
     /** Returns the [WorkValue] for [key], or `null` if the key is absent. */
     public operator fun get(key: String): WorkValue? = map[key]
 
-    /** Read-only view of the underlying map; iteration order is insertion order. */
+    /**
+     * Read-only view of the underlying map; iteration order is insertion order.
+     *
+     * Hidden from the iOS / macOS surface: `Map.Entry<K, V>` is a Java
+     * interface that doesn't bridge to a usable Swift form (no exhaustive
+     * `switch`, no value-type semantics) — H-4 (review-loop round 1) and the
+     * matching CLAUDE.md §8 rule. Swift consumers should iterate with [get]
+     * over [keysSnapshot], or build the input from a `Map<String, WorkValue>`
+     * (see [ofMap]) and hold their own reference.
+     *
+     * `@OptIn(ExperimentalObjCRefinement::class)`: standard SKIE-recognised
+     * annotation; stable in practice.
+     */
+    @OptIn(kotlin.experimental.ExperimentalObjCRefinement::class)
+    @HiddenFromObjC
     public fun entries(): Set<Map.Entry<String, WorkValue>> = map.entries
+
+    /**
+     * Snapshot of the keys in this input. Swift-friendly alternative to
+     * [entries]: callers iterate the keys and look up values via [get].
+     */
+    public fun keysSnapshot(): Set<String> = map.keys.toSet()
 
     /** Serialize this input to its compact JSON form. Useful for debugging or manual persistence. */
     public fun toJson(): String = json.encodeToString(serializer(), this)

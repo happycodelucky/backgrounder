@@ -1,5 +1,8 @@
 package dev.backgrounder
 
+import kotlin.experimental.ExperimentalObjCName
+import kotlin.native.ObjCName
+
 /**
  * Optional lifecycle hook for app-level metrics.
  *
@@ -9,9 +12,14 @@ package dev.backgrounder
  * the worker.
  *
  * Wire one via the Koin module by binding `single<BackgrounderEventListener>`.
+ *
+ * `@OptIn(ExperimentalObjCName::class)`: Swift-rename annotation so callbacks
+ * read like Swift selectors at the iOS / macOS boundary (CLAUDE.md §8).
  */
+@OptIn(ExperimentalObjCName::class)
 public interface BackgrounderEventListener {
     /** Called immediately after [Scheduler.schedule] accepts a [WorkRequest]. */
+    @ObjCName(swiftName = "onScheduled")
     public fun onScheduled(
         taskId: TaskId,
         request: WorkRequest,
@@ -22,6 +30,7 @@ public interface BackgrounderEventListener {
      *
      * @param attempt 0-based retry counter; 0 on the first invocation.
      */
+    @ObjCName(swiftName = "onStarted")
     public fun onStarted(
         taskId: TaskId,
         attempt: Int,
@@ -33,6 +42,7 @@ public interface BackgrounderEventListener {
      * @param attempt 0-based counter matching the value passed to [onStarted].
      * @param result the outcome returned by [BackgroundWorker.execute].
      */
+    @ObjCName(swiftName = "onCompleted")
     public fun onCompleted(
         taskId: TaskId,
         attempt: Int,
@@ -40,6 +50,7 @@ public interface BackgrounderEventListener {
     )
 
     /** Called when [Scheduler.cancel] or [Scheduler.cancelAll] removes this task. */
+    @ObjCName(swiftName = "onCancelled")
     public fun onCancelled(taskId: TaskId)
 
     public companion object {

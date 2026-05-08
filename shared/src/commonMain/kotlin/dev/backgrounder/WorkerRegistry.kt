@@ -3,19 +3,25 @@ package dev.backgrounder
 import kotlinx.atomicfu.atomic
 import kotlinx.atomicfu.locks.SynchronizedObject
 import kotlinx.atomicfu.locks.synchronized
+import kotlin.experimental.ExperimentalObjCName
+import kotlin.native.ObjCName
 
 /**
  * The DI seam: maps stable [TaskId]s to factories that build a fresh
  * [BackgroundWorker] per invocation.
  *
  * Each factory is a lambda that closes over the user's DI graph (typically
- * resolving from Koin's `GlobalContext`). The library calls the factory each
- * time the platform fires a worker — never caches the worker instance itself.
+ * resolving from Koin). The library calls the factory each time the platform
+ * fires a worker — never caches the worker instance itself.
  *
  * Register every factory at app launch *before* `Backgrounder.registerHandlers`
  * (iOS / macOS) or `Backgrounder.markReady` (Android). Re-registering the same
  * id throws.
+ *
+ * `@OptIn(ExperimentalObjCName::class)`: Swift-rename annotations so iOS app
+ * code calls `registry.register(taskId:factory:)` (CLAUDE.md §8).
  */
+@OptIn(ExperimentalObjCName::class)
 public class WorkerRegistry {
     // MUST NOT call suspend functions inside this block — see CLAUDE.md §3.
     private val lock = SynchronizedObject()
@@ -32,6 +38,8 @@ public class WorkerRegistry {
      * @throws IllegalStateException if the registry is sealed.
      * @throws IllegalArgumentException if [taskId] is already registered.
      */
+    @ObjCName(swiftName = "register")
+    @Throws(IllegalStateException::class, IllegalArgumentException::class)
     public fun register(
         taskId: TaskId,
         factory: () -> BackgroundWorker,
@@ -47,6 +55,7 @@ public class WorkerRegistry {
         }
 
     /** Returns the set of task ids currently registered. Snapshot — safe to call at any time. */
+    @ObjCName(swiftName = "registeredIds")
     public fun registeredIds(): Set<TaskId> = synchronized(lock) { factories.keys.toSet() }
 
     /**

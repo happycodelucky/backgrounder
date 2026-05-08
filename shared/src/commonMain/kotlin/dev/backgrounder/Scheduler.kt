@@ -1,6 +1,5 @@
 package dev.backgrounder
 
-import kotlin.coroutines.cancellation.CancellationException
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -49,9 +48,13 @@ public interface Scheduler {
      * Snapshot of currently-scheduled (pending or running) tasks the library
      * knows about. Not a [Flow] — for a reactive stream, see `Scheduler.observe`
      * (v2). Best-effort per platform.
+     *
+     * No `@Throws` — SKIE bridges `suspend fun` as Swift `async throws` and
+     * routes coroutine cancellation through Swift's native `Task.cancel` /
+     * `CancellationError` machinery (CLAUDE.md §8). The platform actuals don't
+     * throw documented domain exceptions; if that changes, list them here.
      */
     @ObjCName(swiftName = "scheduled")
-    @Throws(CancellationException::class)
     public suspend fun scheduled(): List<ScheduledTask>
 
     /** What this platform's scheduler actually guarantees. */
