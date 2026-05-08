@@ -11,22 +11,35 @@ package dev.backgrounder
  * Wire one via the Koin module by binding `single<BackgrounderEventListener>`.
  */
 public interface BackgrounderEventListener {
+    /** Called immediately after [Scheduler.schedule] accepts a [WorkRequest]. */
     public fun onScheduled(
         taskId: TaskId,
         request: WorkRequest,
     )
 
+    /**
+     * Called when the platform fires the worker and execution is about to begin.
+     *
+     * @param attempt 0-based retry counter; 0 on the first invocation.
+     */
     public fun onStarted(
         taskId: TaskId,
         attempt: Int,
     )
 
+    /**
+     * Called when [BackgroundWorker.execute] returns (regardless of [WorkResult]).
+     *
+     * @param attempt 0-based counter matching the value passed to [onStarted].
+     * @param result the outcome returned by [BackgroundWorker.execute].
+     */
     public fun onCompleted(
         taskId: TaskId,
         attempt: Int,
         result: WorkResult,
     )
 
+    /** Called when [Scheduler.cancel] or [Scheduler.cancelAll] removes this task. */
     public fun onCancelled(taskId: TaskId)
 
     public companion object {

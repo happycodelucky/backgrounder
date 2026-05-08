@@ -20,8 +20,7 @@ public sealed interface WorkResult {
 
     /**
      * Transient failure; retry per the request's [BackoffPolicy]. The library
-     * converts this to [Failure] once `BackoffPolicy.maxAttempts` is exhausted
-     * (see plan §iOS / §Android backoff handling).
+     * converts this to [Failure] once `BackoffPolicy.maxAttempts` is exhausted.
      */
     public data object Retry : WorkResult
 }

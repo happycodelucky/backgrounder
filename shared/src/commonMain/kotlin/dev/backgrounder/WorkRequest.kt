@@ -34,8 +34,11 @@ public sealed interface WorkRequest {
         override val constraints: WorkConstraints = WorkConstraints(),
         override val input: WorkInput = WorkInput.empty(),
         override val ephemeral: Boolean = false,
+        /** Minimum delay before the platform dispatches this request. May be [Duration.ZERO]. */
         val initialDelay: Duration = Duration.ZERO,
+        /** Retry policy applied when the worker returns [WorkResult.Retry]. */
         val backoff: BackoffPolicy = BackoffPolicy.exponential(30.seconds),
+        /** Hint to the scheduler about urgency; see [ExecutionHint.Expedited] for iOS/Android specifics. */
         val executionHint: ExecutionHint = ExecutionHint.Standard,
     ) : WorkRequest {
         init {
@@ -54,7 +57,14 @@ public sealed interface WorkRequest {
         override val constraints: WorkConstraints = WorkConstraints(),
         override val input: WorkInput = WorkInput.empty(),
         override val ephemeral: Boolean = false,
+        /** How often the scheduler should repeat this task. Must be `>= 15 minutes` (Android floor). */
         val interval: Duration,
+        /**
+         * Execution flex window at the end of each [interval]. If non-null, the platform may
+         * fire the task anywhere in the final [flexWindow] of the period.
+         * Maps to [androidx.work.PeriodicWorkRequest] flex interval and macOS `tolerance`.
+         * iOS does not use this value (BGProcessingTaskRequest has no flex window).
+         */
         val flexWindow: Duration? = null,
     ) : WorkRequest {
         init {
@@ -70,7 +80,11 @@ public sealed interface WorkRequest {
     }
 
     public companion object {
-        /** Android `PeriodicWorkRequest` minimum interval. Cross-platform recommendation. */
+        /**
+         * Minimum interval recommended for [Periodic] requests. Matches Android
+         * `PeriodicWorkRequest`'s hard 15-minute floor; used as a recommendation
+         * on iOS / macOS where no system floor exists.
+         */
         public val MIN_RECOMMENDED_INTERVAL: Duration = 15.minutes
     }
 }

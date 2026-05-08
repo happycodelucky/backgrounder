@@ -37,9 +37,15 @@ public sealed interface ExecutionHint {
  * `androidx.work.OutOfQuotaPolicy`. iOS ignores it (no quota concept).
  */
 public enum class QuotaPolicy {
-    /** Fall back to a regular (non-expedited) work request. */
+    /**
+     * Fall back to a regular (non-expedited) work request when expedited quota is exhausted.
+     * Maps to [androidx.work.OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST].
+     */
     RunAsRegular,
 
-    /** Drop the request entirely. */
+    /**
+     * Drop the work request entirely when expedited quota is exhausted.
+     * Maps to [androidx.work.OutOfQuotaPolicy.DROP_WORK_REQUEST].
+     */
     Drop,
 }

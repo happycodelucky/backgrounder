@@ -66,22 +66,32 @@ public sealed interface BackoffPolicy {
     }
 
     public companion object {
-        // WorkManager's MIN_BACKOFF_MILLIS == 10s.
+        /**
+         * Minimum allowed [initialDelay] — matches Android WorkManager's `MIN_BACKOFF_MILLIS`
+         * (10 seconds) to keep cross-platform behavior identical.
+         */
         public val MIN_BACKOFF: Duration = 10.seconds
 
-        // WorkManager's MAX_BACKOFF_MILLIS == 5h, but in practice we cap lower so iOS
-        // emulation doesn't park earliestBeginDate in next week.
+        /**
+         * Maximum delay produced by [Exponential.delayFor]. Capped at 5 hours so
+         * iOS emulation does not park `earliestBeginDate` beyond a practical horizon.
+         */
         public val MAX_BACKOFF: Duration = (5 * 60).seconds * 60 // 5 hours
 
+        /** Default value for [maxAttempts] when not specified. */
         public const val DEFAULT_MAX_ATTEMPTS: Int = 10
+
+        /** Upper bound for [maxAttempts]. */
         public const val MAX_MAX_ATTEMPTS: Int = 30
         private const val MAX_SHIFT_BITS: Int = 30
 
+        /** Convenience factory for [Linear] with the given parameters. */
         public fun linear(
             initialDelay: Duration = 30.seconds,
             maxAttempts: Int = DEFAULT_MAX_ATTEMPTS,
         ): BackoffPolicy = Linear(initialDelay, maxAttempts)
 
+        /** Convenience factory for [Exponential] with the given parameters. */
         public fun exponential(
             initialDelay: Duration = 30.seconds,
             maxAttempts: Int = DEFAULT_MAX_ATTEMPTS,

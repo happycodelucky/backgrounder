@@ -14,6 +14,15 @@ import org.koin.core.module.Module
 import org.koin.dsl.module
 import platform.Foundation.NSUserDefaults
 
+/**
+ * macOS-specific Koin module. Wire alongside `backgrounderCommonModule`:
+ *
+ * ```
+ * KoinKt.startKoin {
+ *     modules(backgrounderCommonModule, backgrounderMacOSModule, /* yours */)
+ * }
+ * ```
+ */
 public val backgrounderMacOSModule: Module =
     module {
         single<Settings>(qualifier = SettingsQualifier) {

@@ -31,7 +31,11 @@ Spawn these three agents concurrently:
    Prompt: "Review the diff `<base>...HEAD` (scope: `<scope>`). Walk the H1–H4 + Apple-casing + Swift-interop checklists. Confidence-score each finding ≥ 80%. Group by severity. End with file:line citations. Do not edit code; report only."
 
 2. **feature-dev:code-reviewer** (existing plugin agent — `subagent_type: feature-dev:code-reviewer`).
-   Prompt: "Review the diff `<base>...HEAD` against project guidelines in CLAUDE.md. Confidence ≥ 80. Report bugs, security, code quality."
+   Prompt: "Review the diff `<base>...HEAD` against project guidelines in CLAUDE.md. Confidence ≥ 80. Report bugs, security, code quality.
+
+   **Swift-interop checks specific to this repo (in addition to CLAUDE.md §8):**
+   - **`@Throws` audit on Swift-facing public APIs.** Every public Kotlin API likely consumed from Swift (anything `public` in `commonMain` / `appleMain` / `iosMain` / `macosMain`) that can throw must declare its **domain exceptions** in `@Throws(...)`. Missing `@Throws` on a thrower → unrecoverable iOS crash. Flag any public `suspend fun`, public init with `require`/`check`, or public function with `@throws` KDoc that lacks the matching `@Throws` annotation.
+   - **`CancellationException` should NOT appear in `@Throws` on a SKIE-using project.** This repo uses SKIE, which bridges `suspend fun` as Swift `async throws` and routes coroutine cancellation through Swift's native `Task.cancel` / `CancellationError` machinery — KMP handles cancellation transparently. Adding `CancellationException::class` to the `@Throws` list pollutes the generated Swift signature and forces Swift consumers to write a meaningless catch arm. Flag any existing `@Throws(CancellationException::class, ...)` for cleanup. (Note: CLAUDE.md §8's example currently includes `CancellationException` — that example is misleading for SKIE-enabled projects and is itself a documentation finding worth raising.)"
 
 3. **modernization-scout** — pass through the general-purpose agent. The scout's job is to web-search for modernization opportunities specific to what changed in the diff. Prompt template (fill in `<diff-summary>` from a quick `git diff --stat`):
 
