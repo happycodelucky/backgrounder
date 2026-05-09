@@ -39,13 +39,17 @@ internal class BackgrounderWorkerFactory(
         // is the documented pattern; `Class.forName(workerClassName)` would
         // load the class on every dispatch which we don't need.
         return when (workerClassName) {
-            RegistryDispatchWorker::class.java.name ->
+            RegistryDispatchWorker::class.java.name -> {
                 RegistryDispatchWorker(appContext, workerParameters, registry, eventListener, readyGate)
+            }
 
-            InstantDispatchWorker::class.java.name ->
+            InstantDispatchWorker::class.java.name -> {
                 InstantDispatchWorker(appContext, workerParameters, pendingInstantCalls)
+            }
 
-            else -> null
+            else -> {
+                null
+            }
         }
     }
 }

@@ -69,9 +69,10 @@ class RunNowTest {
             backgrounder.start()
 
             class Boom : RuntimeException("boom")
-            val thrown = assertFailsWith<Boom> {
-                backgrounder.runNow(taskId) { throw Boom() }
-            }
+            val thrown =
+                assertFailsWith<Boom> {
+                    backgrounder.runNow(taskId) { throw Boom() }
+                }
             assertEquals("boom", thrown.message)
         }
 

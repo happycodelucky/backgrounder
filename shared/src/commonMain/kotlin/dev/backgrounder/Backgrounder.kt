@@ -158,9 +158,13 @@ public class Backgrounder internal constructor(
         val schedulerOutcome = core.scheduler.cancel(taskId)
         val cancelledRunNow = core.instantRunner.cancelInFlight(taskId)
         return when (schedulerOutcome) {
-            is CancelOutcome.Cancelled -> schedulerOutcome
-            CancelOutcome.NoSuchTask ->
+            is CancelOutcome.Cancelled -> {
+                schedulerOutcome
+            }
+
+            CancelOutcome.NoSuchTask -> {
                 if (cancelledRunNow) CancelOutcome.Cancelled(pendingCleared = 0) else CancelOutcome.NoSuchTask
+            }
         }
     }
 
