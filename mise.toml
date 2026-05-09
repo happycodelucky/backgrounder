@@ -1,2 +1,84 @@
 [tools]
 gradle = "9.4.1"
+
+# ────────────────────────────────────────────────────────────────────────────
+# Mise tasks for the Backgrounder KMP library.
+#
+# Quick reference:
+#   mise run build       — assemble all production targets (fast)
+#   mise run test        — fast inner-loop tests (macOS arm64 only)
+#   mise run check       — what CI runs (lint + every test on every target)
+#   mise run framework   — link iOS arm64 debug framework with SKIE
+#   mise run xcframework — release XCFramework (KMMBridge artifact)
+#   mise run ci          — exact CI sequence locally
+#   mise run format      — auto-fix ktlint findings
+#   mise run clean       — gradle clean
+#
+# Conventions:
+# - Tests on each target run independently. The "fast" macOS path covers
+#   commonTest and is the right inner loop. iOS simulator tests are slower
+#   (boot a simulator per task) and live under `test:apple`.
+# - `check` mirrors CI: ktlint + every unit test target (commonTest +
+#   iosSimulatorArm64Test + macosArm64Test + androidHostTest).
+# - All tasks scope to `:shared` — the only module in the repo today.
+# ────────────────────────────────────────────────────────────────────────────
+
+# ── Build ──────────────────────────────────────────────────────────────────
+
+[tasks.build]
+description = "Assemble all production targets (Android + iOS arm64 + iOS sim arm64 + macOS arm64)"
+run = "./gradlew :shared:assemble"
+
+[tasks.framework]
+description = "Link the iOS arm64 debug framework with SKIE — fast iOS smoke test"
+run = "./gradlew :shared:linkDebugFrameworkIosArm64"
+
+[tasks.xcframework]
+description = "Build the release XCFramework (KMMBridge artifact, CLAUDE.md §9)"
+run = "./gradlew :shared:assembleBackgrounderXCFramework"
+
+# ── Test ───────────────────────────────────────────────────────────────────
+
+[tasks.test]
+description = "Fast inner-loop tests — macOS arm64 only (covers commonTest)"
+run = "./gradlew :shared:macosArm64Test"
+
+[tasks."test:android"]
+description = "Android host unit tests"
+run = "./gradlew :shared:testAndroidHostTest"
+
+[tasks."test:ios"]
+description = "iOS simulator arm64 tests (slower — boots a simulator)"
+run = "./gradlew :shared:iosSimulatorArm64Test"
+
+[tasks."test:apple"]
+description = "Both Apple test targets (macOS arm64 + iOS simulator arm64)"
+depends = ["test", "test:ios"]
+
+[tasks."test:all"]
+description = "Every test target across every platform"
+depends = ["test", "test:ios", "test:android"]
+
+# ── Lint / format ──────────────────────────────────────────────────────────
+
+[tasks.lint]
+description = "ktlint check (no tests)"
+run = "./gradlew :shared:ktlintCheck"
+
+[tasks.format]
+description = "Auto-fix ktlint findings where possible"
+run = "./gradlew :shared:ktlintFormat"
+
+# ── Aggregates ─────────────────────────────────────────────────────────────
+
+[tasks.check]
+description = "Full local check — exactly what CI's `:shared:check` runs (ktlint + every test target)"
+run = "./gradlew :shared:check"
+
+[tasks.ci]
+description = "Run the exact CI sequence locally: check + xcframework"
+run = "./gradlew :shared:check :shared:assembleBackgrounderXCFramework"
+
+[tasks.clean]
+description = "Gradle clean"
+run = "./gradlew :shared:clean"
