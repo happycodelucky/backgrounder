@@ -27,20 +27,55 @@ import platform.Foundation.NSUserDefaults
  * `NSUserDefaults` suite (cheap; idempotent).
  */
 internal object IOSBackgrounderBuilder {
-    fun build(eventListener: BackgrounderEventListener): Backgrounder {
+    fun build(
+        tickIdentifier: String,
+        eventListener: BackgrounderEventListener,
+    ): Backgrounder {
         val settings = NSUserDefaultsSettings(NSUserDefaults(suiteName = "dev.backgrounder.shared"))
         val ephemeral = EphemeralRegistry(settings)
         val state = IOSStateStore(settings)
         val mutexes = IOSTaskMutexes()
         val registry = WorkerRegistry()
 
-        // Build scheduler first — it has no dependency on the bridge.
+        // The dispatcher is pure logic — no platform deps. Constructed here
+        // so its lifecycle is co-owned with the rest of the iOS graph; the
+        // background feed consumes it directly (foreground feed in step 5).
+        val dispatcher =
+            IOSPeriodicDispatcher(
+                state = state,
+                mutexes = mutexes,
+                registry = registry,
+                ephemeral = ephemeral,
+                eventListener = eventListener,
+            )
+
+        // Background feed — owns the single library tick identifier. In step 4
+        // it registers alongside the existing per-id handlers (no behaviour
+        // change yet); the cut-over to dispatcher-driven periodics happens in
+        // step 6 when BGTaskBackedScheduler.schedulePeriodic switches.
+        val backgroundFeed =
+            IOSBackgroundFeed(
+                tickIdentifier = tickIdentifier,
+                dispatcher = dispatcher,
+            )
+
+        // Foreground feed — observes UIApplication lifecycle and runs an
+        // in-process dispatch loop while the app is foregrounded. UIKit
+        // observation lives behind a justification comment in the file
+        // header (CLAUDE.md §1 gray zone).
+        val foregroundFeed = IOSForegroundFeed(dispatcher = dispatcher)
+
+        // Scheduler depends on both feeds (so it can refresh the tick request
+        // and kick the in-process loop after schedule/cancel) but not on the
+        // bridge — the bridge captures the scheduler in its applyResult lambda.
         val scheduler =
             BGTaskBackedScheduler(
                 state = state,
                 mutexes = mutexes,
                 ephemeral = ephemeral,
                 eventListener = eventListener,
+                backgroundFeed = backgroundFeed,
+                foregroundFeed = foregroundFeed,
             )
 
         // Bridge captures the scheduler reference inside the applyResult lambda.
@@ -57,22 +92,46 @@ internal object IOSBackgrounderBuilder {
             )
 
         val sweep = IOSEphemeralSweep(ephemeral, state)
-        val registration = BGTaskHandlerRegistration(registry, state, bridge)
+        // Step 4: BGTaskHandlerRegistration now also takes the background feed, which
+        // it uses to register the tick identifier with BGTaskScheduler (alongside
+        // per-id handlers — coexistence is intentional until step 6's cut-over).
+        val registration =
+            BGTaskHandlerRegistration(
+                registry = registry,
+                state = state,
+                bridge = bridge,
+                tickIdentifier = tickIdentifier,
+                backgroundFeed = backgroundFeed,
+            )
 
         return Backgrounder(
             BackgrounderCore(
                 registry = registry,
                 scheduler = scheduler,
                 onStart = {
-                    // The order matches the old `BackgrounderIOS.platformRegisterHandlers`:
-                    // sweep first (clears ephemeral state before any handler fires),
+                    // Sweep first (clears ephemeral state before any handler fires),
                     // then registration (registers OS handlers, validates plist,
-                    // resurrects active periodics). `BackgrounderCore.start()` already
-                    // sealed the registry before invoking this lambda.
+                    // queues the tick request, resurrects active periodics).
+                    // `BackgrounderCore.start()` already sealed the registry before
+                    // invoking this lambda.
+                    //
+                    // Foreground feed starts last so its UIApplication-state probe
+                    // observes the post-launch state (active vs background); a
+                    // launch sequence that synchronously backgrounds the app
+                    // before start() returns is rare but not impossible.
                     sweep.run()
                     registration.run()
+                    foregroundFeed.start()
                 },
-                onShutdown = { bridge.shutdown() },
+                onShutdown = {
+                    // Reverse order: tear down the foreground feed first (removes
+                    // UIApplication observers), then the background feed (cancels
+                    // the per-tick scope), then the bridge (cancels the per-task
+                    // scope used for one-shots).
+                    foregroundFeed.shutdown()
+                    backgroundFeed.shutdown()
+                    bridge.shutdown()
+                },
             ),
         )
     }

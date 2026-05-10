@@ -8,10 +8,13 @@ The iOS launch sequence is **three steps** — *create*, *register*, *start*. Th
 ```swift
 @main
 final class AppDelegate: NSObject, UIApplicationDelegate {
-    // 1. Construct. The factory builds the iOS state store, BGTaskScheduler-
-    //    backed scheduler, coroutine bridge, and ephemeral sweep — pure
-    //    constructor injection, no DI container required.
-    let backgrounder = Backgrounder.companion.create()
+    // 1. Construct. Pass the library's tick identifier — the iOS
+    //    BGAppRefreshTaskRequest the dispatcher uses to wake periodics
+    //    in the background. Pick something in your app's reverse-DNS
+    //    namespace; it must match the entry you add to Info.plist below.
+    let backgrounder = Backgrounder.companion.create(
+        tickIdentifier: "dev.example.app.background-tick"
+    )
 
     func application(
         _ application: UIApplication,
@@ -25,8 +28,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         }
 
         // 3. Start. Performs the iOS ephemeral sweep, registers BGTaskScheduler
-        //    launch handlers for every registered task id, and resurrects
-        //    active periodic schedules. Must run before this method returns.
+        //    launch handlers (the tick + per-id for one-shots), starts the
+        //    foreground dispatch loop, and resurrects active periodic state.
+        //    Must run before this method returns.
         backgrounder.start()
         return true
     }
@@ -37,33 +41,65 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 
 ## Info.plist
 
-Add every `TaskId` you schedule:
+You need **at least the tick identifier** plus one entry per `WorkRequest.OneTime` task id you schedule. Periodic task ids do **not** need their own entries — they're driven by the dispatcher through the tick.
 
 ```xml
 <key>BGTaskSchedulerPermittedIdentifiers</key>
 <array>
-    <string>dev.example.app.sync</string>
-    <string>dev.example.app.upload</string>
+    <string>dev.example.app.background-tick</string>  <!-- mandatory: matches tickIdentifier above -->
+    <string>dev.example.app.upload</string>           <!-- one-shot WorkRequest.OneTime -->
 </array>
 ```
 
-The library validates this list during `backgrounder.start()` and reports a Kermit error per missing id. Failing close to the cause (registration time) rather than first-`schedule()` time means the diagnostic is much easier to act on.
+The library validates the tick identifier during `backgrounder.start()` (Kermit error if missing — periodic dispatch is dead in the water without it) and warns about each registered factory id missing from the plist (you only need a per-id entry if you'll schedule that id as a `OneTime`; a periodic-only id doesn't need one).
 
 ## What runs where
 
-- The OS calls a Swift / Obj-C closure on its own queue when a `BGTask` fires.
-- The library bounces into a `SupervisorJob`-rooted `CoroutineScope` on `Dispatchers.Default` (CLAUDE.md §3 forbids `GlobalScope`; the scope is owned by the iOS scheduler).
-- `BGTask.expirationHandler` is wired to cancel the coroutine job; `job.invokeOnCompletion` calls `setTaskCompletedWithSuccess(false)` on cancellation. Success path: `applyResult` calls `setTaskCompletedWithSuccess` directly inside the coroutine.
+The library has **two dispatch paths** on iOS, used in different parts of the app's lifecycle.
+
+**One-shot tasks** (`WorkRequest.OneTime`) flow through per-`TaskId` `BGTaskScheduler` registrations. iOS calls the registered launch handler when it decides to dispatch; the library bounces into a `SupervisorJob`-rooted `CoroutineScope` on `Dispatchers.Default` (CLAUDE.md §3 forbids `GlobalScope`; the scope is owned by the iOS coroutine bridge). `BGTask.expirationHandler` is wired to cancel the coroutine job; every `setTaskCompletedWithSuccess` call goes through a per-fire `CompletionGuard` so iOS's "completed twice" assertion can't trigger.
+
+**Periodic tasks** (`WorkRequest.Periodic`) flow through an in-process dispatcher with two feeds:
+
+- **Foreground feed** — observes `UIApplicationWillEnterForegroundNotification` / `UIApplicationDidEnterBackgroundNotification`. While the app is foregrounded, an in-process loop coroutine sleeps until the soonest periodic's next-run time, then drains everything that's currently due. This is what fires periodic work while the user is actively in the app — `BGAppRefreshTaskRequest` does **not** fire for foregrounded apps, so without this feed a periodic whose interval elapsed during a long user session would silently slip past its cycle.
+- **Background feed** — registers the single library-owned tick identifier with `BGTaskScheduler` as a `BGAppRefreshTaskRequest`. When iOS decides to dispatch (e.g. the user has the app installed but hasn't opened it lately), the library walks the persisted scheduling table and runs every periodic that's currently due, then resubmits the next App Refresh request with `earliestBeginDate = soonestUpcomingNextRun()`.
+
+The two feeds **coalesce by `TaskId`**: both consult the same `IOSStateStore` and acquire the same per-task `Mutex` before running a worker. The dispatcher advances `nextRunEpochMs` *before* invoking the worker, so a near-simultaneous race between the foreground loop and a background tick still results in exactly one worker run per cycle — the second arrival sees the advanced timestamp and skips.
+
+Each foreground-initiated dispatch is wrapped in a `UIApplication.beginBackgroundTaskWithName` runway. If the user backgrounds the app mid-dispatch, iOS grants a continuation window (~30 seconds, sometimes a few minutes) before suspending the process, giving the worker time to finish. If the OS reclaims the runway before the worker completes, cancellation propagates through the dispatch scope and the worker is treated as `Retry` on the next tick.
+
+## Coalescing missed intervals
+
+If iOS doesn't wake the app for several intervals (foreground gap of hours, low power, App Refresh quota throttling), the worker fires **once** on the next dispatch — never N times back-to-back to "catch up." The library reschedules the next cycle from "now," not from the missed boundary, so cadence resyncs to the system's wake timing.
+
+Concretely, a `Periodic` configured to run every 4 hours that iOS doesn't dispatch until 13 hours later fires once, not three or four times. If your worker needs to compensate for the gap (e.g. "fetch everything since the last sync"), put that logic inside the worker using your own persisted `lastSyncedAt` — the scheduler does not surface a missed-cycles count to the worker.
+
+This contract holds across all three platforms (iOS, Android via WorkManager rebasing, macOS via `NSBackgroundActivityScheduler` one-wake-at-a-time).
+
+## Foreground vs background execution windows
+
+| Path | Window | Constraints honored | Cancels in flight |
+|---|---|---|---|
+| Foreground feed (in-process loop) | No OS budget | n/a | Yes (when app backgrounds + runway expires) |
+| `beginBackgroundTaskWithName` runway | ~30 s (sometimes a few minutes) | n/a | Yes (when runway expires) |
+| Background feed (`BGAppRefreshTaskRequest`) | ~30 s | None — App Refresh ignores `requiresExternalPower` / `requiresNetworkConnectivity` | Yes (when iOS expires the BGTask) |
+| One-shot `BGProcessingTaskRequest` | "several minutes" | Yes (network + power) | Yes (when iOS expires the BGTask) |
+| One-shot `BGAppRefreshTaskRequest` (Expedited) | ~30 s | None | Yes |
+
+`WorkConstraints` on `WorkRequest.Periodic` are **not honored on iOS** — periodics flow through paths that either ignore constraints (App Refresh) or have no constraint concept (in-process). Workers that need power/network gating should check at the start of `execute()` and return `WorkResult.Retry` if conditions aren't met; the dispatcher's backoff logic will reschedule appropriately.
 
 ## Concurrency
 
-`BGTaskScheduler` may fire two distinct task identifiers concurrently. Per-task state operations (read attempt, write attempt, mark inactive) go through a `ConcurrentMap<TaskId, Mutex>` — distinct task ids run independently; cross-task state is single-writer-per-key.
+`BGTaskScheduler` may fire two distinct task identifiers concurrently. Per-task state operations (read attempt, write attempt, mark inactive) go through a `ConcurrentMap<TaskId, Mutex>` — distinct task ids run independently; cross-task state is single-writer-per-key. The dispatcher uses the same per-task mutex map to coalesce foreground/background races.
 
 ## Testing
 
 ```
-(lldb) e -l objc -- (void)[[BGTaskScheduler sharedScheduler] _simulateLaunchForTaskWithIdentifier:@"dev.example.app.sync"]
-(lldb) e -l objc -- (void)[[BGTaskScheduler sharedScheduler] _simulateExpirationForTaskWithIdentifier:@"dev.example.app.sync"]
+(lldb) e -l objc -- (void)[[BGTaskScheduler sharedScheduler] _simulateLaunchForTaskWithIdentifier:@"dev.example.app.background-tick"]
+(lldb) e -l objc -- (void)[[BGTaskScheduler sharedScheduler] _simulateExpirationForTaskWithIdentifier:@"dev.example.app.background-tick"]
 ```
 
-Background tasks **do not fire automatically in the Simulator**. The LLDB simulate-launch hook is private (leading underscore) and only available on Simulator builds. On device, you wait for the system to dispatch.
+Use the **tick identifier** (not the per-task id) to simulate background dispatch of periodics. For one-shots, use the per-task id you scheduled.
+
+Background tasks **do not fire automatically in the Simulator**. The LLDB simulate-launch hook is private (leading underscore) and only available on Simulator builds. On device, you wait for the system to dispatch — the foreground dispatch loop runs normally regardless.
+

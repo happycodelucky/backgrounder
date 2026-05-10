@@ -22,8 +22,17 @@ import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * Drives a [BGTask] handler closure from the OS — the load-bearing piece per
- * the plan's "Coroutine bridge" section.
+ * Drives a per-`TaskId` [BGTask] handler closure from the OS — the
+ * **one-shot** dispatch path.
+ *
+ * Post step-6 cut-over, periodics no longer flow through this bridge —
+ * they're driven by [IOSPeriodicDispatcher] via the
+ * [IOSForegroundFeed] / [IOSBackgroundFeed] pair, which use a single
+ * library-owned tick identifier instead of per-`TaskId` registrations.
+ * This bridge handles only [WorkRequest.OneTime] dispatches; the per-id
+ * launch handler registration in [BGTaskHandlerRegistration.registerOne]
+ * is conservatively wired for every registered factory id, but periodics
+ * never reach it because nothing submits per-id requests for them.
  *
  * The OS calls a Swift / Obj-C closure on its own queue. We launch user code
  * on a [SupervisorJob]-rooted scope (CLAUDE.md §3 forbids `GlobalScope`),
