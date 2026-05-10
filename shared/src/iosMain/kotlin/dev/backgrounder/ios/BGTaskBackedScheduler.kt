@@ -41,6 +41,14 @@ internal class BGTaskBackedScheduler(
     private val mutexes: IOSTaskMutexes,
     private val ephemeral: EphemeralRegistry,
     private val eventListener: BackgrounderEventListener,
+    // Step 6 cut-over: Periodics no longer have per-`TaskId` BGTaskRequests.
+    // Instead, scheduling a Periodic writes to state and signals both feeds:
+    //  - backgroundFeed.submitNextTick() so iOS's tick request gets refreshed
+    //    if this Periodic is now the soonest upcoming nextRunEpochMs;
+    //  - foregroundFeed.kick() so the in-process loop re-evaluates its delay.
+    // OneShot scheduling is unchanged — still per-`TaskId` BGTaskRequests.
+    private val backgroundFeed: IOSBackgroundFeed,
+    private val foregroundFeed: IOSForegroundFeed,
 ) : Scheduler {
     private val log = Logger.withTag("Backgrounder/iOS/Scheduler")
 
@@ -75,7 +83,21 @@ internal class BGTaskBackedScheduler(
                 }
 
                 IOSStateStore.Kind.Periodic -> {
-                    handlePeriodicResult(task, taskId, attempt, result, active, guard)
+                    // Defensive: post step-6 cut-over, periodics flow through
+                    // IOSPeriodicDispatcher (driven by the foreground/background
+                    // feeds). Reaching this branch means a per-`TaskId`
+                    // BGTaskScheduler launch handler was registered for a
+                    // periodic id (which still happens — registerOne covers all
+                    // factory ids defensively) AND iOS dispatched it (which
+                    // shouldn't happen — nothing submits per-id requests for
+                    // periodics anymore). Treat as unknown and complete the
+                    // BGTask so iOS doesn't reclaim the process.
+                    log.w {
+                        "$taskId: applyResult reached for Periodic via per-id BGTask path. " +
+                            "Periodics should flow through IOSPeriodicDispatcher; " +
+                            "completing BGTask defensively."
+                    }
+                    guard.runOnce { task.setTaskCompletedWithSuccess(result is WorkResult.Success) }
                 }
 
                 null -> {
@@ -133,67 +155,14 @@ internal class BGTaskBackedScheduler(
         }
     }
 
-    private fun handlePeriodicResult(
-        task: BGTask,
-        taskId: TaskId,
-        attempt: Int,
-        result: WorkResult,
-        active: Boolean,
-        guard: CompletionGuard,
-    ) {
-        if (!active) {
-            log.i { "$taskId periodic but active=false (cancel won the race); not resubmitting" }
-            guard.runOnce { task.setTaskCompletedWithSuccess(result is WorkResult.Success) }
-            return
-        }
-        val intervalMs =
-            state.readIntervalMs(taskId)
-                ?: run {
-                    log.e { "$taskId periodic with no interval_ms; bailing out of state machine" }
-                    guard.runOnce { task.setTaskCompletedWithSuccess(false) }
-                    return
-                }
-        when (result) {
-            WorkResult.Success, is WorkResult.Failure -> {
-                state.setAttempt(taskId, 0)
-                val nextRun = Clock.System.now().toEpochMilliseconds() + intervalMs
-                state.setNextRunEpochMs(taskId, nextRun)
-                resubmit(taskId, nextRun)
-                guard.runOnce { task.setTaskCompletedWithSuccess(result is WorkResult.Success) }
-            }
-
-            WorkResult.Retry -> {
-                val backoff = backoffPolicyForRetry(taskId)
-                val nextAttempt = attempt + 1
-                if (IOSBackoffEmulation.shouldGiveUp(backoff, nextAttempt)) {
-                    log.w {
-                        "$taskId periodic exhausted maxAttempts(${backoff.maxAttempts}); " +
-                            "treating as Failure and resuming regular cadence"
-                    }
-                    state.setAttempt(taskId, 0)
-                    val nextRun = Clock.System.now().toEpochMilliseconds() + intervalMs
-                    state.setNextRunEpochMs(taskId, nextRun)
-                    resubmit(taskId, nextRun)
-                    guard.runOnce { task.setTaskCompletedWithSuccess(false) }
-                    return
-                }
-                state.setAttempt(taskId, nextAttempt)
-                // delayFor(attempt) — see one-shot path for rationale.
-                val nextRun = IOSBackoffEmulation.nextRunEpochMs(backoff, attempt)
-                state.setNextRunEpochMs(taskId, nextRun)
-                resubmit(taskId, nextRun)
-                guard.runOnce { task.setTaskCompletedWithSuccess(true) }
-            }
-        }
-    }
-
     /**
-     * The resubmit path. We can't recover the original [WorkRequest] (it isn't
-     * persisted in full), but we know the kind and can reconstruct the minimal
-     * `BGTaskRequest`. The exact `executionHint` isn't preserved — we default
-     * to `Standard`, which translates to `BGProcessingTaskRequest`. This is
-     * documented in the plan; users who want `Expedited` cadence on iOS
-     * shouldn't be using `WorkRequest.Periodic` since it's emulated anyway.
+     * The resubmit path for one-shot Retry handling. Periodics never call
+     * this post step-6 cut-over — they flow through [IOSPeriodicDispatcher],
+     * which has its own retry/backoff machinery. The one-shot
+     * [WorkRequest.OneTime.executionHint] isn't preserved across resubmit
+     * (we reconstruct from kind alone, defaulting to `BGProcessingTaskRequest`);
+     * Expedited one-shots that hit Retry will degrade to Standard on retry.
+     * Documented as a v1 limitation.
      */
     private fun resubmit(
         taskId: TaskId,
@@ -271,12 +240,21 @@ internal class BGTaskBackedScheduler(
             intervalMs = request.interval.inWholeMilliseconds,
             nextRunEpochMs = nextRun,
         )
-        val osRequest =
-            BGProcessingTaskRequest(request.taskId.value).apply {
-                earliestBeginDate = epochMsToNSDate(nextRun)
-                applyConstraints(request.constraints, ExecutionHint.Standard)
-            }
-        return submit(osRequest, request.taskId)
+        // Step 6 cut-over: no per-`TaskId` BGTaskRequest. The dispatcher decides
+        // what runs at each tick; both feeds wake up to consult its
+        // soonestUpcomingNextRun().
+        //
+        // Constraints (request.constraints) are intentionally NOT honored on
+        // periodics post-cut-over: the background feed always uses
+        // BGAppRefreshTaskRequest, which has no requiresExternalPower /
+        // requiresNetworkConnectivity fields, and the foreground feed runs
+        // in-process where iOS-style constraints don't apply. Workers that
+        // need power/network gating should check at the start of execute()
+        // and return WorkResult.Retry if the conditions aren't met (the
+        // dispatcher's backoff logic will reschedule appropriately).
+        backgroundFeed.submitNextTick()
+        foregroundFeed.kick()
+        return ScheduleOutcome.Scheduled
     }
 
     private fun newOSRequest(
@@ -306,33 +284,64 @@ internal class BGTaskBackedScheduler(
         }
 
     override fun cancel(taskId: TaskId): CancelOutcome {
-        val known = state.readKind(taskId) != null
-        BGTaskScheduler.sharedScheduler.cancelTaskRequestWithIdentifier(taskId.value)
+        // Capture kind BEFORE clear() — we need it to decide whether to cancel
+        // a per-id BGTaskRequest (one-shots only) and whether to refresh the
+        // background feed's tick (periodics only).
+        val kindBeforeClear = state.readKind(taskId)
+        val known = kindBeforeClear != null
+
+        if (kindBeforeClear == IOSStateStore.Kind.OneShot) {
+            // One-shots still have a per-`TaskId` BGTaskRequest pending in iOS.
+            BGTaskScheduler.sharedScheduler.cancelTaskRequestWithIdentifier(taskId.value)
+        }
+        // Periodics have no per-id request post-cut-over — the tick handles all.
+
+        // Same C-3 ordering as cancelAll: setActive(false) first so any
+        // in-flight handler / dispatcher pass reads the cancelled state.
         state.setActive(taskId, false)
         state.clear(taskId)
         ephemeral.remove(taskId)
         mutexes.forget(taskId)
         eventListener.onCancelled(taskId)
+
+        if (kindBeforeClear == IOSStateStore.Kind.Periodic) {
+            // Refresh the tick — soonest may have moved later (or to null) now
+            // that this periodic is gone. Refresh the foreground loop too.
+            backgroundFeed.submitNextTick()
+            foregroundFeed.kick()
+        }
+
         return if (known) CancelOutcome.Cancelled(pendingCleared = 1) else CancelOutcome.NoSuchTask
     }
 
     override fun cancelAll(): CancelOutcome {
         val ids = state.knownTaskIds()
         if (ids.isEmpty()) {
+            // Nothing in our state, but defensively also cancel everything in
+            // iOS's queue — including the library's tick request if anyone
+            // pre-queued one. cancelAllTaskRequests is a single iOS call.
             BGTaskScheduler.sharedScheduler.cancelAllTaskRequests()
             return CancelOutcome.NoSuchTask
         }
         // C-3: mirror the single-task `cancel()` ordering. Set `active=false` BEFORE
-        // clearing state so an in-flight handler that wakes up between
-        // `cancelTaskRequestWithIdentifier` and `clear` reads `active=false` and
-        // takes the "cancel won the race" path rather than reading still-true state
-        // and resubmitting a task we just cancelled.
+        // clearing state so an in-flight handler / dispatcher pass that wakes up
+        // between the iOS cancel call and `clear` reads `active=false` and takes
+        // the "cancel won the race" path rather than reading still-true state and
+        // resubmitting a task we just cancelled.
+        //
+        // Step 6 cut-over: for periodics, there's no per-id BGTaskRequest to cancel
+        // in iOS's queue (only the tick exists, and we cancel it once after the
+        // loop). For one-shots, the per-id cancel still applies.
         ids.forEach { id ->
-            BGTaskScheduler.sharedScheduler.cancelTaskRequestWithIdentifier(id.value)
+            if (state.readKind(id) == IOSStateStore.Kind.OneShot) {
+                BGTaskScheduler.sharedScheduler.cancelTaskRequestWithIdentifier(id.value)
+            }
             state.setActive(id, false)
             state.clear(id)
             eventListener.onCancelled(id)
         }
+        // Cancel the tick request — there are no periodics left to drive it.
+        backgroundFeed.cancel()
         ephemeral.clear()
         mutexes.forgetAll()
         return CancelOutcome.Cancelled(pendingCleared = ids.size)

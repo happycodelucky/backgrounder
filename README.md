@@ -107,7 +107,13 @@ Add to your app's `AndroidManifest.xml` to disable WorkManager's default auto-in
 ```swift
 @main
 final class AppDelegate: NSObject, UIApplicationDelegate {
-    let backgrounder = Backgrounder.companion.create()
+    // Pick a tick identifier in your app's reverse-DNS namespace. The library
+    // uses it as the BGAppRefreshTaskRequest that wakes periodic dispatch in
+    // the background. Periodic task ids do not need their own Info.plist
+    // entries — the tick handles them.
+    let backgrounder = Backgrounder.companion.create(
+        tickIdentifier: "dev.example.app.background-tick"
+    )
 
     func application(
         _ application: UIApplication,
@@ -122,26 +128,30 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 }
 ```
 
-Add every Backgrounder task id to your app's `Info.plist`:
+Add the tick identifier (mandatory) plus one entry per `WorkRequest.OneTime` task id you schedule to your app's `Info.plist`. Periodic ids do **not** need their own entries.
 
 ```xml
 <key>BGTaskSchedulerPermittedIdentifiers</key>
 <array>
-    <string>dev.example.app.sync</string>
-    <!-- ...one per TaskId you register -->
+    <string>dev.example.app.background-tick</string>  <!-- mandatory: matches tickIdentifier above -->
+    <string>dev.example.app.upload</string>           <!-- one-shot WorkRequest.OneTime -->
 </array>
 ```
 
-Missing identifiers are reported with a Kermit error during `backgrounder.start()` (close to the cause; not at first `schedule()`).
+A missing tick identifier is reported with a Kermit error during `backgrounder.start()` (close to the cause; not at first `schedule()`). Missing one-shot ids surface as warnings — the library can't tell at registration time which ids will be used as one-shots vs periodics.
+
+See [docs/platforms/ios.md](docs/platforms/ios.md) for how the foreground/background dispatcher works, the coalescing contract, and the per-path execution windows.
 
 ### iOS testing
 
 Background tasks don't fire automatically in the iOS Simulator. Drive them from LLDB while paused:
 
 ```
-(lldb) e -l objc -- (void)[[BGTaskScheduler sharedScheduler] _simulateLaunchForTaskWithIdentifier:@"dev.example.app.sync"]
-(lldb) e -l objc -- (void)[[BGTaskScheduler sharedScheduler] _simulateExpirationForTaskWithIdentifier:@"dev.example.app.sync"]
+(lldb) e -l objc -- (void)[[BGTaskScheduler sharedScheduler] _simulateLaunchForTaskWithIdentifier:@"dev.example.app.background-tick"]
+(lldb) e -l objc -- (void)[[BGTaskScheduler sharedScheduler] _simulateExpirationForTaskWithIdentifier:@"dev.example.app.background-tick"]
 ```
+
+Use the tick identifier (not the per-task id) to simulate background dispatch of periodics. For one-shots, use the per-task id you scheduled. The foreground dispatch loop runs normally regardless and doesn't need LLDB.
 
 ---
 

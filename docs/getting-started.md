@@ -98,7 +98,13 @@ The factory closure you pass to `register(...)` is where DI happens — pass a c
 
     ```swift title="AppDelegate.swift"
     final class AppDelegate: NSObject, UIApplicationDelegate {
-        let backgrounder = Backgrounder.companion.create()
+        // Pick a tick identifier in your app's reverse-DNS namespace; it must
+        // match the entry you add to Info.plist below. The library uses it as
+        // the BGAppRefreshTaskRequest that wakes periodic dispatch in the
+        // background. Periodic task ids do not need their own entries.
+        let backgrounder = Backgrounder.companion.create(
+            tickIdentifier: "dev.example.app.background-tick"
+        )
 
         func application(
             _ application: UIApplication,
@@ -114,21 +120,22 @@ The factory closure you pass to `register(...)` is where DI happens — pass a c
             }
 
             // 3. Start. Performs the iOS ephemeral sweep, registers
-            //    BGTaskScheduler launch handlers, and resurrects active
-            //    periodic tasks. Must run before this method returns.
+            //    BGTaskScheduler launch handlers (tick + per-id one-shots),
+            //    starts the foreground dispatch loop, and resurrects active
+            //    periodic state. Must run before this method returns.
             backgrounder.start()
             return true
         }
     }
     ```
 
-    Add every Backgrounder task id to your app's `Info.plist`:
+    Add the tick identifier (mandatory) plus one entry per `WorkRequest.OneTime` task id you schedule to your app's `Info.plist`. Periodic ids do **not** need their own entries — the tick handles them.
 
     ```xml
     <key>BGTaskSchedulerPermittedIdentifiers</key>
     <array>
-        <string>dev.example.app.sync</string>
-        <!-- ...one per TaskId you register -->
+        <string>dev.example.app.background-tick</string>  <!-- mandatory: matches tickIdentifier above -->
+        <string>dev.example.app.upload</string>           <!-- one-shot WorkRequest.OneTime -->
     </array>
     ```
 
