@@ -6,9 +6,7 @@ A Kotlin Multiplatform library that wraps platform background-scheduling primiti
 - **iOS 18+**: `BGTaskScheduler` (one-shot + library-emulated periodic; force-quit caveat documented).
 - **macOS 15+**: Foundation's `NSBackgroundActivityScheduler` (one-shot + native periodic).
 
-UI is out of scope (CLAUDE.md §1) — Backgrounder is the *headless* `:shared` KMP module. Each platform app consumes it natively. **No DI container is required** — the library uses constructor injection internally and a factory-closure seam for user code, so any DI graph you already use plugs in cleanly.
-
-> v1 deliberately ships a small, correct surface. Reactive `observe()`, an `ExecutionHint.LongRunning` for Android foreground-service work, fine-grained Android-only constraints, and a published `:testing` artifact are all v2 work — see the plan at `~/.claude/plans/on-android-there-is-vectorized-dawn.md`.
+Documentations can be found [here](https://happycodelucky.github.io/backgrounder/)
 
 ---
 
