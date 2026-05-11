@@ -50,6 +50,16 @@ backgrounder.scheduler.schedule(
 )
 ```
 
+Or for "do this work in the background **right now** and give me back the typed result" — no constraints, no retries, structured `await` — use `runNow`:
+
+```kotlin
+val saved: SavedDocument = backgrounder.runNow(saveTaskId) {
+    repo.save(draft)
+}
+```
+
+`runNow` runs on the platform's real background primitive so the work survives if the user backgrounds the app mid-call — `UIApplication.beginBackgroundTask` on iOS, `WorkManager` on Android, a library scope on macOS. See the [Run now recipe](https://happycodelucky.github.io/backgrounder/recipes/run-now/) for the full contract.
+
 ---
 
 ## Launch sequence — Android

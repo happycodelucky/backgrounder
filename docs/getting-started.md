@@ -182,6 +182,7 @@ The platform scheduler will dispatch the worker when its constraints are satisfi
 ## What's next
 
 - **[Recipes](recipes/one-shot.md)** — task-oriented "how to do X" pages.
+- **[Recipes → Run now](recipes/run-now.md)** — `Backgrounder.runNow<R>(taskId) { … }` for "do this work in the background right now and let me `await` the typed result." Different from scheduled work — no constraints, no retries, the lambda *is* the work.
 - **[Concepts → Worker context & DI](concepts/worker-context-and-di.md)** — the factory pattern in depth, including Koin / Hilt / hand-wired examples.
 - **[Concepts → Ephemeral flag](concepts/ephemeral.md)** — defending against the "ran before init" Android foot-gun.
 - **[Platforms → Force-quit caveat (iOS)](platforms/force-quit.md)** — read before shipping iOS.
