@@ -22,6 +22,15 @@ plugins {
 }
 
 kotlin {
+    // Library code: every public API symbol must carry an explicit visibility
+    // modifier (public / internal / private). Without this, a contributor can
+    // forget a modifier on a top-level helper and silently widen the published
+    // API surface — which becomes a permanent contract once shipped via
+    // KMMBridge → SPM. The compiler now enforces what was previously convention.
+    //
+    // See https://kotlinlang.org/docs/whatsnew14.html#explicit-api-mode-for-library-authors
+    explicitApi()
+
     // CLAUDE.md §4: applyDefaultHierarchyTemplate. Don't hand-roll source set wiring.
     @OptIn(ExperimentalKotlinGradlePluginApi::class)
     applyDefaultHierarchyTemplate {

@@ -19,10 +19,18 @@ import kotlinx.atomicfu.atomic
 internal class BackgrounderCore(
     val registry: WorkerRegistry,
     val scheduler: Scheduler,
+    val instantRunner: InstantRunner,
     private val onStart: () -> Unit,
     private val onShutdown: () -> Unit,
 ) {
     private val started = atomic(false)
+
+    /**
+     * Whether [start] has been called. Read by [Backgrounder.runNow] to gate
+     * dispatch — instant runs require the registry to be sealed before they
+     * can rely on stable platform handlers being installed.
+     */
+    val isStarted: Boolean get() = started.value
 
     /** Idempotent — repeated calls return without invoking [onStart] again. */
     fun start() {

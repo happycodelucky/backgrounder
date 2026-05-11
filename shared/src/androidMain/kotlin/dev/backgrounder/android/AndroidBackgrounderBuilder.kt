@@ -8,6 +8,7 @@ import dev.backgrounder.Backgrounder
 import dev.backgrounder.BackgrounderCore
 import dev.backgrounder.BackgrounderEventListener
 import dev.backgrounder.EphemeralRegistry
+import dev.backgrounder.PendingInstantCalls
 import dev.backgrounder.WorkerRegistry
 import kotlinx.atomicfu.atomic
 
@@ -69,13 +70,22 @@ internal object AndroidBackgrounderBuilder {
                 eventListener = eventListener,
                 scheduledTaskQuery = scheduledTaskQuery,
             )
-        val factory = BackgrounderWorkerFactory(registry, eventListener, readyGate)
+
+        // The instant-runNow path: a process-singleton single-slot map plus the
+        // WorkManager-backed runner. The factory below also routes
+        // `InstantDispatchWorker` instantiations to construct it with the
+        // same `PendingInstantCalls` instance.
+        val pendingInstantCalls = PendingInstantCalls()
+        val instantRunner = WorkManagerInstantRunner(workManagerProvider, pendingInstantCalls)
+
+        val factory = BackgrounderWorkerFactory(registry, eventListener, readyGate, pendingInstantCalls)
 
         val backgrounder =
             Backgrounder(
                 BackgrounderCore(
                     registry = registry,
                     scheduler = scheduler,
+                    instantRunner = instantRunner,
                     onStart = {
                         // Plan §1.1: `start()` flips the ready gate so workers
                         // that were enqueued (but blocked by the

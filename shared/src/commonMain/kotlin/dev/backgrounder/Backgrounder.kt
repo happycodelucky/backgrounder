@@ -77,6 +77,98 @@ public class Backgrounder internal constructor(
     }
 
     /**
+     * Run [task] immediately under [taskId] and suspend until it completes,
+     * returning the typed result `R`.
+     *
+     * **Semantics — "raw" background dispatch.** Unlike scheduled work
+     * ([scheduler] + [register]), `runNow`:
+     *  - runs *immediately*, with no [WorkConstraints], no [BackoffPolicy], no
+     *    retries, no [ExecutionHint] gating;
+     *  - does **not** consult [WorkerRegistry] — the [task] lambda *is* the work,
+     *    and [taskId] does **not** need to be `register()`-ed first;
+     *  - is routed through the OS scheduling primitive on Android (`WorkManager`)
+     *    and iOS (`BGTaskScheduler`) so the work earns background runtime if
+     *    the app is suspended mid-call; on macOS it runs on a library-owned
+     *    `SupervisorJob` scope (`NSBackgroundActivityScheduler` is interval-shaped
+     *    and a poor fit for one-shot work).
+     *
+     * **Pre-emption — "last call wins".** If a `runNow` is already in flight
+     * for [taskId], or a scheduled run for [taskId] is pending or executing,
+     * `runNow` cancels them all (via [cancel]) *before* submitting its own
+     * request. The prior caller's `await` rethrows `CancellationException`.
+     * This is necessary because `runNow` returns a typed result to a specific
+     * caller — two concurrent runs for the same id would be ambiguous.
+     *
+     * **Cancellation.** Caller cancellation flows through structured concurrency:
+     * the OS request is cancelled (best-effort on iOS — `BGTaskScheduler`
+     * cannot kill a *running* handler, only pending requests; an in-flight
+     * lambda is cancelled via the in-process bridge `Job`), the `task` lambda
+     * observes `CancellationException`, and `runNow` rethrows.
+     *
+     * **Exceptions.** A `Throwable` thrown by [task] propagates to the caller's
+     * `await`. The platform layer reports `WorkResult.Failure` to the OS so
+     * it doesn't treat the process as crashed. SKIE bridges this as Swift
+     * `async throws -> R`.
+     *
+     * **iOS `Info.plist` requirement.** [taskId]`.value` *must* appear in the
+     * app's `BGTaskSchedulerPermittedIdentifiers` array. If it does not,
+     * `BGTaskScheduler.submit` rejects the request and `runNow` throws an
+     * `IllegalStateException` whose message names the missing identifier.
+     *
+     * @throws IllegalStateException if [start] has not been called yet, or
+     *   the platform refuses the request (iOS only — see above).
+     */
+    @ObjCName(swiftName = "run")
+    @Throws(IllegalStateException::class)
+    public suspend fun <R> runNow(
+        taskId: TaskId,
+        task: suspend () -> R,
+    ): R {
+        check(core.isStarted) {
+            "Backgrounder.runNow($taskId): start() has not been called yet."
+        }
+        // Pre-empt anything else for this id (in-flight runNow, pending schedule,
+        // in-flight scheduled worker). The prior runNow caller — if any — sees
+        // CancellationException from their await.
+        cancel(taskId)
+        return core.instantRunner.run(taskId, task)
+    }
+
+    /**
+     * Cancel everything the library knows about for [taskId]:
+     *  - any pending scheduled request (delegates to [Scheduler.cancel]);
+     *  - any in-flight scheduled worker (best-effort per platform);
+     *  - any in-flight [runNow] call (its `Deferred` completes with
+     *    `CancellationException`, the caller's `await` rethrows).
+     *
+     * Returns `Cancelled(pendingCleared)` where `pendingCleared` is the
+     * platform-reported count from [Scheduler.cancel] (best-effort — Android
+     * reports an accurate count; iOS reports 0 or 1). `runNow` cancellations
+     * are **not** added to `pendingCleared` — that field's existing meaning
+     * is "platform-pending requests removed" and we keep it stable.
+     *
+     * Returns `NoSuchTask` only when neither a scheduled request nor an
+     * in-flight `runNow` existed for [taskId].
+     *
+     * For "scheduled-only" cancellation, use [scheduler]`.cancel(taskId)` —
+     * it remains unchanged.
+     */
+    @ObjCName(swiftName = "cancel")
+    public fun cancel(taskId: TaskId): CancelOutcome {
+        val schedulerOutcome = core.scheduler.cancel(taskId)
+        val cancelledRunNow = core.instantRunner.cancelInFlight(taskId)
+        return when (schedulerOutcome) {
+            is CancelOutcome.Cancelled -> {
+                schedulerOutcome
+            }
+
+            CancelOutcome.NoSuchTask -> {
+                if (cancelledRunNow) CancelOutcome.Cancelled(pendingCleared = 0) else CancelOutcome.NoSuchTask
+            }
+        }
+    }
+
+    /**
      * Tear down library-owned coroutine scopes (CLAUDE.md §3 — every scope has
      * a clear owner with a defined cancellation lifecycle).
      *

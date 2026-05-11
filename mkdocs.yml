@@ -107,6 +107,7 @@ nav:
     - concepts/guarantees.md
   - Recipes:
     - recipes/one-shot.md
+    - recipes/run-now.md
     - recipes/periodic.md
     - recipes/cancel.md
     - recipes/inspect.md

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Instant dispatch — `Backgrounder.runNow`
+
+- New `suspend fun <R> Backgrounder.runNow(taskId, task): R` for "run this lambda in the background **right now** and let me `await` the typed result." Complements scheduled work — bypasses `WorkConstraints`, `BackoffPolicy`, retries, and the `BackgroundWorker` / `register` path entirely; the lambda *is* the work. See [Run now](recipes/run-now.md).
+- Routed through the platform's real background primitive so the work survives if the caller backgrounds mid-call:
+    - **Android**: `WorkManager` (a synthetic one-time request keyed `${taskId}::runNow`).
+    - **iOS**: `UIApplication.beginBackgroundTask(withName:expirationHandler:)` — *not* `BGTaskScheduler`. `BGTaskScheduler` requires `Info.plist` permitted-identifiers and is for deferred work; `beginBackgroundTask` grants ~30s of grace if the app backgrounds during the call, with no `Info.plist` requirement. The `TaskId` is purely an in-process pre-emption key on iOS — never sent to the OS scheduler.
+    - **macOS**: library-owned `SupervisorJob` scope (macOS apps generally have foreground time; `NSBackgroundActivityScheduler` is interval-shaped and a poor fit for one-shot dispatch).
+- **Pre-emption is the contract.** `runNow(taskId, …)` cancels any in-flight `runNow`, any pending scheduled request, and any in-flight scheduled worker for the same `TaskId` **before** submitting its own request. Concurrent `runNow` calls with the same `TaskId` are "last call wins" — two typed results to one caller would be ambiguous.
+- **Unified `Backgrounder.cancel(taskId)`** cancels everything for a `TaskId` — scheduled requests *and* in-flight `runNow`. `Scheduler.cancel(taskId)` keeps its narrow scheduled-only meaning.
+- Structured concurrency throughout: caller cancellation cancels the OS request, the lambda observes `CancellationException`, and the caller's `await` rethrows. Lambda exceptions propagate to the caller via `@Throws`.
+
 ### iOS periodic dispatch
 
 - `WorkRequest.Periodic` is now driven by a coalescing dispatcher with two feeds — an in-process loop while the app is foregrounded, and a single library-owned `BGAppRefreshTaskRequest` while it is not. iOS suppresses `BGAppRefreshTaskRequest` for foregrounded apps, so the in-process loop is what fires periodics at the right moment during user sessions; without it a periodic whose interval elapsed during a long session would silently slip past until the user backgrounded the app.
