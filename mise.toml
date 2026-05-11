@@ -15,6 +15,9 @@ gradle = "9.4.1"
 #   mise run clean       — gradle clean
 #
 # Conventions:
+# - Task naming uses `domain:action`, colon-separated, lowercase. Hyphens are
+#   reserved for word separation *inside* a single segment (none today). The
+#   colons let mise group related tasks in `mise tasks` output.
 # - Tests on each target run independently. The "fast" macOS path covers
 #   commonTest and is the right inner loop. iOS simulator tests are slower
 #   (boot a simulator per task) and live under `test:apple`.
@@ -29,8 +32,23 @@ gradle = "9.4.1"
 description = "Assemble all production targets (Android + iOS arm64 + iOS sim arm64 + macOS arm64)"
 run = "./gradlew :shared:assemble"
 
+[tasks."build:ios"]
+description = "Link the iOS arm64 debug framework slices (device + Apple Silicon simulator)"
+run = """
+./gradlew :shared:linkDebugFrameworkIosArm64 \
+          :shared:linkDebugFrameworkIosSimulatorArm64
+"""
+
+[tasks."build:macos"]
+description = "Link the debug macOS framework slice (Apple Silicon)"
+run = "./gradlew :shared:linkDebugFrameworkMacosArm64"
+
+[tasks."build:android"]
+description = "Assemble the Android AAR"
+run = "./gradlew :shared:assemble"
+
 [tasks.framework]
-description = "Link the iOS arm64 debug framework with SKIE — fast iOS smoke test"
+description = "Link the iOS arm64 debug framework with SKIE — fast iOS smoke test (alias of build:ios for the device slice only)"
 run = "./gradlew :shared:linkDebugFrameworkIosArm64"
 
 [tasks.xcframework]

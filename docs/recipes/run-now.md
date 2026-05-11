@@ -5,7 +5,7 @@
 Typical use: the user just hit Save and you want the document persisted in the background, surviving an immediate app-background, with the result piped back into the UI when it returns.
 
 ```kotlin
-import dev.backgrounder.*
+import com.happycodelucky.backgrounder.*
 
 class DocumentVM(private val backgrounder: Backgrounder, private val repo: DocumentRepository) {
     private val saveTaskId = TaskId("dev.example.app.save-document")

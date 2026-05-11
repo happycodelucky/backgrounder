@@ -25,7 +25,7 @@ If your app is itself a Kotlin Multiplatform project, depend on the `shared` art
     backgrounder = "0.1.0"
 
     [libraries]
-    backgrounder-shared = { module = "dev.backgrounder:shared", version.ref = "backgrounder" }
+    backgrounder-shared = { module = "com.happycodelucky.backgrounder:shared", version.ref = "backgrounder" }
     ```
 
 === "Kotlin DSL (`build.gradle.kts`)"
@@ -48,7 +48,7 @@ If your app is Android-only (not a KMP project), depend on the published Android
 
 ```kotlin
 dependencies {
-    implementation("dev.backgrounder:backgrounder-android:0.1.0")
+    implementation("com.happycodelucky.backgrounder:backgrounder-android:0.1.0")
 }
 ```
 

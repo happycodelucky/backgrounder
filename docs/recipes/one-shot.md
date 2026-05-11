@@ -3,7 +3,7 @@
 A one-shot job runs once. It survives process death and reboot (unless `ephemeral = true`), and is retried per `BackoffPolicy.maxAttempts` if the worker returns `WorkResult.Retry`.
 
 ```kotlin
-import dev.backgrounder.*
+import com.happycodelucky.backgrounder.*
 import kotlin.time.Duration.Companion.seconds
 
 val outcome = backgrounder.scheduler.schedule(
