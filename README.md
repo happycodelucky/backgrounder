@@ -68,9 +68,9 @@ val saved: SavedDocument = backgrounder.runNow(saveTaskId) {
 
 ```kotlin
 import androidx.work.Configuration
-import dev.backgrounder.Backgrounder
-import dev.backgrounder.androidWorkerFactory
-import dev.backgrounder.create
+import com.happycodelucky.backgrounder.Backgrounder
+import com.happycodelucky.backgrounder.androidWorkerFactory
+import com.happycodelucky.backgrounder.create
 
 class MyApp : Application(), Configuration.Provider {
     lateinit var backgrounder: Backgrounder

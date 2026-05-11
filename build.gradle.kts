@@ -20,7 +20,7 @@ plugins {
 }
 
 allprojects {
-    group = "dev.backgrounder"
+    group = "com.happycodelucky.backgrounder"
     // The in-tree version carries `-SNAPSHOT` and a `0` patch slot. Humans bump
     // major/minor here and commit the change; the patch slot stays `0`. CI
     // overrides this at build time via `-Pversion=...` to stamp ephemeral

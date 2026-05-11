@@ -55,7 +55,7 @@ kotlin {
             baseName = "Backgrounder"
             isStatic = true
             // Pin the bundle id so SKIE doesn't fall back to the framework name.
-            binaryOption("bundleId", "dev.backgrounder.shared")
+            binaryOption("bundleId", "com.happycodelucky.backgrounder.shared")
             // CLAUDE.md §8: SKIE wraps the framework export.
             xcf.add(this)
         }
@@ -65,7 +65,7 @@ kotlin {
     // Use the new com.android.kotlin.multiplatform.library plugin's android {} block.
     @OptIn(ExperimentalKotlinGradlePluginApi::class)
     android {
-        namespace = "dev.backgrounder"
+        namespace = "com.happycodelucky.backgrounder"
         compileSdk =
             libs.versions.android.compile.sdk
                 .get()

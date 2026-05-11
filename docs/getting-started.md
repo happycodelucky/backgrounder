@@ -6,17 +6,17 @@ There are three steps regardless of platform: *create*, *register*, *start*. The
 
 ## 1. Add Backgrounder to your build
 
-See [Installation](installation.md) for the version-catalog snippet and the platform-floor table. The short version is: add `dev.backgrounder:shared` to your `commonMain` dependencies.
+See [Installation](installation.md) for the version-catalog snippet and the platform-floor table. The short version is: add `com.happycodelucky.backgrounder:shared` to your `commonMain` dependencies.
 
 ## 2. Define a `BackgroundWorker` in `commonMain`
 
 Implement the single-method `BackgroundWorker` interface. Workers are *built by a factory at app launch* — not instantiated by reflection — so they receive their dependencies through their constructor.
 
 ```kotlin title="commonMain/SyncWorker.kt"
-import dev.backgrounder.BackgroundWorker
-import dev.backgrounder.TaskId
-import dev.backgrounder.WorkResult
-import dev.backgrounder.WorkerContext
+import com.happycodelucky.backgrounder.BackgroundWorker
+import com.happycodelucky.backgrounder.TaskId
+import com.happycodelucky.backgrounder.WorkResult
+import com.happycodelucky.backgrounder.WorkerContext
 
 class SyncWorker(
     private val repo: MyRepository,
@@ -47,9 +47,9 @@ The factory closure you pass to `register(...)` is where DI happens — pass a c
 
     ```kotlin title="MyApp.kt — Application.onCreate"
     import androidx.work.Configuration
-    import dev.backgrounder.Backgrounder
-    import dev.backgrounder.androidWorkerFactory
-    import dev.backgrounder.create
+    import com.happycodelucky.backgrounder.Backgrounder
+    import com.happycodelucky.backgrounder.androidWorkerFactory
+    import com.happycodelucky.backgrounder.create
 
     class MyApp : Application(), Configuration.Provider {
         lateinit var backgrounder: Backgrounder

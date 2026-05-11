@@ -63,7 +63,7 @@ K2 only. No K1 fallback.
 
 Allowed exceptions:
 - **Identifiers we don't own** — `applyDefaultHierarchyTemplate { withIos() / withMacos() / withTvos() / withWatchos() }`, the JetBrains-supplied source-set names (`iosMain` / `macosMain`), and the K/N target names (`iosArm64`, `macosArm64`, etc.). The spelling is fixed by JetBrains; we follow what the tool requires.
-- **Package names** — Kotlin / Java packages are conventionally all-lowercase across the entire ecosystem (`dev.backgrounder.ios`, not `dev.backgrounder.iOS`). The casing rule applies inside types and identifiers within those packages, not to package segments themselves.
+- **Package names** — Kotlin / Java packages are conventionally all-lowercase across the entire ecosystem (`com.happycodelucky.backgrounder.ios`, not `com.happycodelucky.backgrounder.iOS`). The casing rule applies inside types and identifiers within those packages, not to package segments themselves.
 
 Everything else we author — classes, files, top-level functions, top-level `val`s, comments, KDoc — follows the casing-preserving rule.
 
@@ -277,9 +277,9 @@ suspend fun fetchUser(id: String): FetchUserOutcome
 
 **Templates already in this repo.** Mirror their shape:
 
-- `shared/src/commonMain/kotlin/dev/backgrounder/WorkResult.kt`
-- `shared/src/commonMain/kotlin/dev/backgrounder/ScheduleOutcome.kt`
-- `shared/src/commonMain/kotlin/dev/backgrounder/CancelOutcome.kt`
+- `shared/src/commonMain/kotlin/com/happycodelucky/backgrounder/WorkResult.kt`
+- `shared/src/commonMain/kotlin/com/happycodelucky/backgrounder/ScheduleOutcome.kt`
+- `shared/src/commonMain/kotlin/com/happycodelucky/backgrounder/CancelOutcome.kt`
 
 **Internal use of `runCatching` is fine.** This rule is about return types crossing the Swift boundary. `runCatching { ... }.getOrElse { ... }` inside an `internal` function — to swallow-on-purpose, log, or fold into a sealed outcome before returning — does not violate it. The line is drawn at `public` visibility on `commonMain` / `appleMain` / `iosMain` / `macosMain` declarations.
 
