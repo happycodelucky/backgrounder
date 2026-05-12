@@ -3,7 +3,10 @@ package com.happycodelucky.backgrounder.ios
 import com.happycodelucky.backgrounder.BackgroundWorker
 import com.happycodelucky.backgrounder.BackgrounderEventListener
 import com.happycodelucky.backgrounder.EphemeralRegistry
+import com.happycodelucky.backgrounder.FakeReachability
+import com.happycodelucky.backgrounder.NetworkRequirement
 import com.happycodelucky.backgrounder.PlatformCapabilities
+import com.happycodelucky.backgrounder.ReachabilityGate
 import com.happycodelucky.backgrounder.TaskId
 import com.happycodelucky.backgrounder.WorkInput
 import com.happycodelucky.backgrounder.WorkResult
@@ -79,6 +82,12 @@ class IOSPeriodicDispatcherTest {
         val ephemeral = EphemeralRegistry(MapSettings())
         val registry = WorkerRegistry()
         val events = RecordingListener()
+        // Always-reachable fake — the existing tests don't exercise the gate;
+        // they just need it to short-circuit to Met so timing matches pre-gate
+        // behaviour. The gate sits in front of `worker.execute(ctx)` and these
+        // tests assert against execute being called, so a fake stuck at
+        // reachable=true keeps the dispatcher's behaviour identical.
+        val gate = ReachabilityGate(FakeReachability.online())
         val dispatcher =
             IOSPeriodicDispatcher(
                 state = store,
@@ -86,6 +95,7 @@ class IOSPeriodicDispatcherTest {
                 registry = registry,
                 ephemeral = ephemeral,
                 eventListener = events,
+                gate = gate,
                 clock = scope.virtualClock(),
             )
         return Rig(store, mutexes, registry, events, dispatcher)
@@ -105,6 +115,7 @@ class IOSPeriodicDispatcherTest {
             ephemeral = false,
             intervalMs = interval.inWholeMilliseconds,
             nextRunEpochMs = now + interval.inWholeMilliseconds,
+            networkRequired = NetworkRequirement.None,
         )
     }
 

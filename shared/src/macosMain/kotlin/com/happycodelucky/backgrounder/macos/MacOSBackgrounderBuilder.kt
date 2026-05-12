@@ -8,7 +8,9 @@ import com.happycodelucky.backgrounder.BackgrounderCore
 import com.happycodelucky.backgrounder.BackgrounderEventListener
 import com.happycodelucky.backgrounder.EphemeralRegistry
 import com.happycodelucky.backgrounder.PendingInstantCalls
+import com.happycodelucky.backgrounder.ReachabilityGate
 import com.happycodelucky.backgrounder.WorkerRegistry
+import com.happycodelucky.reachable.Reachability
 import com.russhwolf.settings.NSUserDefaultsSettings
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.Foundation.NSUserDefaults
@@ -29,16 +31,29 @@ import platform.Foundation.NSUserDefaults
  * `shutdown()` cancels the scheduler's [kotlinx.coroutines.SupervisorJob]-rooted scope.
  */
 internal object MacOSBackgrounderBuilder {
-    fun build(eventListener: BackgrounderEventListener): Backgrounder {
+    fun build(
+        eventListener: BackgrounderEventListener,
+        reachability: Reachability = Reachability.shared,
+    ): Backgrounder {
         val settings = NSUserDefaultsSettings(NSUserDefaults(suiteName = "com.happycodelucky.backgrounder.shared"))
         val ephemeral = EphemeralRegistry(settings)
         val registry = WorkerRegistry()
+
+        // Pre-execution network gate. Driven by Reachability.shared (default)
+        // or a user-supplied instance (tests). Warm up the platform observer
+        // now by reading isReachable once — Reachability.shared lazily
+        // constructs its nw_path_monitor on first access (cold-read cost
+        // ~10–100ms on Apple); forcing it here keeps the first scheduled
+        // worker out of the cold path.
+        val gate = ReachabilityGate(reachability)
+        reachability.isReachable // discarded — read is the warmup side-effect
 
         val scheduler =
             NSBackgroundActivityBackedScheduler(
                 registry = registry,
                 ephemeral = ephemeral,
                 eventListener = eventListener,
+                gate = gate,
             )
 
         // The instant runner is owned by Backgrounder, not Scheduler — see plan

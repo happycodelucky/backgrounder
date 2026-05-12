@@ -1,7 +1,10 @@
 package com.happycodelucky.backgrounder
 
 import com.happycodelucky.backgrounder.macos.MacOSBackgrounderBuilder
+import com.happycodelucky.reachable.Reachability
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.experimental.ExperimentalObjCRefinement
+import kotlin.native.HiddenFromObjC
 import kotlin.native.ObjCName
 
 /**
@@ -32,4 +35,21 @@ import kotlin.native.ObjCName
 @OptIn(ExperimentalObjCName::class)
 @ObjCName(swiftName = "create")
 public fun Backgrounder.Companion.create(eventListener: BackgrounderEventListener = BackgrounderEventListener.Noop): Backgrounder =
-    MacOSBackgrounderBuilder.build(eventListener)
+    MacOSBackgrounderBuilder.build(eventListener, Reachability.shared)
+
+/**
+ * Test / Kotlin-only overload that takes an explicit [Reachability] instance.
+ *
+ * Hidden from the Swift / Obj-C surface via `@HiddenFromObjC` — see the same
+ * annotation on the iOS counterpart (`Backgrounder.ios.kt`) for the rationale.
+ *
+ * @param reachability the [Reachability] instance the pre-execution network
+ *   gate consults to honour `WorkConstraints.networkRequired`. Override with
+ *   a fake in tests; production should use the parameter-less overload.
+ */
+@OptIn(ExperimentalObjCName::class, ExperimentalObjCRefinement::class)
+@HiddenFromObjC
+public fun Backgrounder.Companion.create(
+    eventListener: BackgrounderEventListener = BackgrounderEventListener.Noop,
+    reachability: Reachability,
+): Backgrounder = MacOSBackgrounderBuilder.build(eventListener, reachability)

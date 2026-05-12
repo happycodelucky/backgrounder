@@ -78,15 +78,17 @@ This contract holds across all three platforms (iOS, Android via WorkManager reb
 
 ## Foreground vs background execution windows
 
-| Path | Window | Constraints honored | Cancels in flight |
-|---|---|---|---|
-| Foreground feed (in-process loop) | No OS budget | n/a | Yes (when app backgrounds + runway expires) |
-| `beginBackgroundTaskWithName` runway | ~30 s (sometimes a few minutes) | n/a | Yes (when runway expires) |
-| Background feed (`BGAppRefreshTaskRequest`) | ~30 s | None — App Refresh ignores `requiresExternalPower` / `requiresNetworkConnectivity` | Yes (when iOS expires the BGTask) |
-| One-shot `BGProcessingTaskRequest` | "several minutes" | Yes (network + power) | Yes (when iOS expires the BGTask) |
-| One-shot `BGAppRefreshTaskRequest` (Expedited) | ~30 s | None | Yes |
+| Path | Window | Network constraint honored | Power constraint honored | Cancels in flight |
+|---|---|---|---|---|
+| Foreground feed (in-process loop) | No OS budget | Yes (library gate, ≤ 5 s) | No | Yes (when app backgrounds + runway expires) |
+| `beginBackgroundTaskWithName` runway | ~30 s (sometimes a few minutes) | n/a | n/a | Yes (when runway expires) |
+| Background feed (`BGAppRefreshTaskRequest`) | ~30 s | Yes (library gate, ≤ 5 s) | No | Yes (when iOS expires the BGTask) |
+| One-shot `BGProcessingTaskRequest` | "several minutes" | Yes (OS hint + library gate, ≤ 5 s) | Yes (OS hint, advisory) | Yes (when iOS expires the BGTask) |
+| One-shot `BGAppRefreshTaskRequest` (Expedited) | ~30 s | Yes (library gate, ≤ 5 s) | No | Yes |
 
-`WorkConstraints` on `WorkRequest.Periodic` are **not honored on iOS** — periodics flow through paths that either ignore constraints (App Refresh) or have no constraint concept (in-process). Workers that need power/network gating should check at the start of `execute()` and return `WorkResult.Retry` if conditions aren't met; the dispatcher's backoff logic will reschedule appropriately.
+**Network constraints are honoured everywhere via a library-managed pre-execution gate** (see [Recipes → Require a network connection](../recipes/network-required.md)). The gate waits up to `min(5 s, budget / 4)` for `Reachability` to satisfy `NetworkRequirement.Any` or `NetworkRequirement.Unmetered`; on timeout the worker is short-circuited to `WorkResult.Retry` and the scheduler reschedules per its `BackoffPolicy`. `Unmetered` is now honoured against `Metering.Unmetered` (wifi/ethernet) — the legacy behaviour of downgrading to `Any` is gone.
+
+**Power constraints (`requiresCharging`)** are still not honoured on iOS today — `BGProcessingTaskRequest.requiresExternalPower` is the only knob and Apple treats it as advisory; the foreground feed and `BGAppRefreshTaskRequest` ignore it entirely. Workers that need a charging precondition should check inside `execute()` and return `WorkResult.Retry` when uncharged.
 
 ## Concurrency
 

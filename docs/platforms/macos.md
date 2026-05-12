@@ -34,6 +34,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 - The library bounces into a `SupervisorJob` + `Dispatchers.Default` scope (the same pattern as iOS), runs the worker, maps `WorkResult` to `NSBackgroundActivityResultFinished` (Success / Failure) or `NSBackgroundActivityResultDeferred` (Retry).
 - `cancel(taskId)` calls `invalidate()` on the live scheduler — interrupts the running block. `cancelsInFlight = true`.
 
+## Network constraints — library-managed gate
+
+`NSBackgroundActivityScheduler` has no constraint concept of its own — no `requiresNetworkConnectivity`, no `requiresExternalPower`. Without the library filling the gap, `WorkConstraints.networkRequired` would be silently ignored on macOS.
+
+The library inserts a pre-execution **reachability gate** that waits up to `min(5 s, ctx.capabilities.maxExecutionTime / 4)` (collapses to ≈5 s under the conservative 5-minute macOS budget) for the requirement to become true. On timeout the worker is short-circuited to `WorkResult.Retry`; `handleOneShotRetry` reschedules a fresh activity with `interval = backoff.delayFor(attempt)`. See [Recipes → Require a network connection](../recipes/network-required.md).
+
+`Unmetered` is honoured against `Metering.Unmetered`. Power constraints (`requiresCharging`) are still not implemented on macOS — workers that need charging should check inside `execute()` and return `Retry`.
+
 ## Periodic is native
 
 macOS doesn't need the iOS periodic-emulation state machine. `NSBackgroundActivityScheduler` has `repeats = true`, `interval`, and `tolerance` (mapped from `WorkRequest.Periodic.flexWindow`). The library hands the OS a single repeating activity per task id and lets it dispatch.

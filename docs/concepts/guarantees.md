@@ -43,5 +43,14 @@ if (!g.cancelsInFlight) {
 ## What's *not* in the table
 
 - **`isForeground`** — there's no notion of "foreground work" in v1 (Android `setForeground` lands as `ExecutionHint.LongRunning` in v2).
-- **Per-network-type policies** — Android exposes `NetworkRequirement.Unmetered`; iOS doesn't honour it. The library logs a single Kermit warning when it's set on iOS rather than silently ignoring.
+- **`requiresCharging` on Apple** — Android honours `WorkConstraints.requiresCharging` natively via WorkManager. On iOS / macOS the library has no charging probe, so the field is silently ignored. Workers that need charging should check inside `execute()` and return `WorkResult.Retry`.
 - **Anything observability-related** — `Scheduler.observe()` is v2.
+
+## Network constraints — honoured everywhere
+
+`WorkConstraints.networkRequired` is honoured on every platform, by different mechanisms:
+
+- **Android** — `WorkManager` refuses to dispatch the worker until the constraint is met. The OS holds it indefinitely.
+- **iOS / macOS** — a library-managed pre-execution gate, driven by [`reachable`](https://github.com/happycodelucky/reachable), waits up to `min(5 s, budget / 4)`. On timeout the worker is short-circuited to `WorkResult.Retry` and the scheduler reschedules per the request's `BackoffPolicy`.
+
+`NetworkRequirement.Unmetered` is honoured against `Metering.Unmetered` (wifi/ethernet) on all platforms — Android maps to `NetworkType.UNMETERED`; Apple checks the metering axis directly. The legacy "downgrade Unmetered to Any on iOS" behaviour is gone. See [Recipes → Require a network connection](../recipes/network-required.md).

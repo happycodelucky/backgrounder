@@ -5,10 +5,12 @@ import com.happycodelucky.backgrounder.BackgrounderEventListener
 import com.happycodelucky.backgrounder.BackoffPolicy
 import com.happycodelucky.backgrounder.EphemeralRegistry
 import com.happycodelucky.backgrounder.PlatformCapabilities
+import com.happycodelucky.backgrounder.ReachabilityGate
 import com.happycodelucky.backgrounder.TaskId
 import com.happycodelucky.backgrounder.WorkResult
 import com.happycodelucky.backgrounder.WorkerContext
 import com.happycodelucky.backgrounder.WorkerRegistry
+import com.happycodelucky.backgrounder.gateBudgetFor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
@@ -63,6 +65,7 @@ internal class IOSPeriodicDispatcher(
     @Suppress("unused") // reserved for ephemeral cleanup on terminal failure; not used in v1
     private val ephemeral: EphemeralRegistry,
     private val eventListener: BackgrounderEventListener,
+    private val gate: ReachabilityGate,
     // Injectable so tests can drive virtual time deterministically.
     private val clock: () -> Long = { Clock.System.now().toEpochMilliseconds() },
 ) {
@@ -146,6 +149,7 @@ internal class IOSPeriodicDispatcher(
                     }
             val attempt = state.readAttempt(taskId)
             val input = state.readInput(taskId)
+            val networkRequired = state.readNetworkRequired(taskId)
 
             // Atomic advance BEFORE worker invocation. This is the
             // load-bearing line for race-coalescing: any concurrent caller
@@ -162,19 +166,39 @@ internal class IOSPeriodicDispatcher(
                     capabilities = capabilities,
                 )
 
+            // ── Reachability gate (review-loop round 2). Apple has no
+            // OS-level constraint enforcement on the dispatch paths this
+            // class drives (BGAppRefreshTaskRequest + in-process foreground
+            // loop both ignore `requiresNetworkConnectivity`). Honour
+            // `WorkConstraints.networkRequired` at the library level by
+            // suspending here up to `min(5s, capabilities.maxExecutionTime / 4)`
+            // and short-circuiting to Retry on timeout. The cancellation /
+            // worker-throw branches below catch the same shape.
+            val gateBudget = gateBudgetFor(capabilities)
+            val gateResult = gate.awaitReachable(networkRequired, gateBudget)
+
             val result: WorkResult =
-                try {
-                    registry.create(taskId).execute(ctx)
-                } catch (e: CancellationException) {
-                    // Treat OS cancellation (BGTask expiration) the same as
-                    // Retry — workers might have made partial progress; the
-                    // attempt counter inches toward the backoff cap, the
-                    // already-advanced nextRunEpochMs gets overridden below.
-                    log.i { "$taskId cancelled (likely BGTask expiration): ${e.message}" }
+                if (gateResult is ReachabilityGate.GateResult.TimedOut) {
+                    log.i {
+                        "$taskId reachability gate timed out " +
+                            "(requirement=$networkRequired, budget=$gateBudget); " +
+                            "skipping worker, deferring as Retry"
+                    }
                     WorkResult.Retry
-                } catch (t: Throwable) {
-                    log.e(t) { "$taskId execute() threw; treating as Retry" }
-                    WorkResult.Retry
+                } else {
+                    try {
+                        registry.create(taskId).execute(ctx)
+                    } catch (e: CancellationException) {
+                        // Treat OS cancellation (BGTask expiration) the same as
+                        // Retry — workers might have made partial progress; the
+                        // attempt counter inches toward the backoff cap, the
+                        // already-advanced nextRunEpochMs gets overridden below.
+                        log.i { "$taskId cancelled (likely BGTask expiration): ${e.message}" }
+                        WorkResult.Retry
+                    } catch (t: Throwable) {
+                        log.e(t) { "$taskId execute() threw; treating as Retry" }
+                        WorkResult.Retry
+                    }
                 }
 
             applyResult(taskId, attempt, result, intervalMs, now)

@@ -1,7 +1,10 @@
 package com.happycodelucky.backgrounder
 
 import com.happycodelucky.backgrounder.ios.IOSBackgrounderBuilder
+import com.happycodelucky.reachable.Reachability
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.experimental.ExperimentalObjCRefinement
+import kotlin.native.HiddenFromObjC
 import kotlin.native.ObjCName
 
 /**
@@ -48,4 +51,31 @@ import kotlin.native.ObjCName
 public fun Backgrounder.Companion.create(
     tickIdentifier: String,
     eventListener: BackgrounderEventListener = BackgrounderEventListener.Noop,
-): Backgrounder = IOSBackgrounderBuilder.build(tickIdentifier, eventListener)
+): Backgrounder = IOSBackgrounderBuilder.build(tickIdentifier, eventListener, Reachability.shared)
+
+/**
+ * Test / Kotlin-only overload that takes an explicit [Reachability] instance.
+ *
+ * Hidden from the Swift / Obj-C surface via `@HiddenFromObjC` — exposing the
+ * `Reachability` protocol through Backgrounder's framework conflicts with the
+ * `reachable` library's bundled `Reachability+Shared.swift` extension (which
+ * is authored against the un-namespaced `Reachability` type and breaks when
+ * SKIE re-namespaces transitively-imported Kotlin types to
+ * `BackgrounderReachableReachability`). Hiding the parameter keeps the
+ * type out of Backgrounder's generated Swift module, while leaving the
+ * Kotlin call site available for unit tests.
+ *
+ * Production iOS apps should call the parameter-less overload above, which
+ * uses [Reachability.shared] internally.
+ *
+ * @param reachability the [Reachability] instance the pre-execution network
+ *   gate consults to honour `WorkConstraints.networkRequired`. Override with
+ *   a fake in tests; production should use the parameter-less overload.
+ */
+@OptIn(ExperimentalObjCName::class, ExperimentalObjCRefinement::class)
+@HiddenFromObjC
+public fun Backgrounder.Companion.create(
+    tickIdentifier: String,
+    eventListener: BackgrounderEventListener = BackgrounderEventListener.Noop,
+    reachability: Reachability,
+): Backgrounder = IOSBackgrounderBuilder.build(tickIdentifier, eventListener, reachability)

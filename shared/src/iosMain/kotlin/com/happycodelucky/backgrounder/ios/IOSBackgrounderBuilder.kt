@@ -8,7 +8,9 @@ import com.happycodelucky.backgrounder.BackgrounderCore
 import com.happycodelucky.backgrounder.BackgrounderEventListener
 import com.happycodelucky.backgrounder.EphemeralRegistry
 import com.happycodelucky.backgrounder.PendingInstantCalls
+import com.happycodelucky.backgrounder.ReachabilityGate
 import com.happycodelucky.backgrounder.WorkerRegistry
+import com.happycodelucky.reachable.Reachability
 import com.russhwolf.settings.NSUserDefaultsSettings
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.Foundation.NSUserDefaults
@@ -31,12 +33,21 @@ internal object IOSBackgrounderBuilder {
     fun build(
         tickIdentifier: String,
         eventListener: BackgrounderEventListener,
+        reachability: Reachability = Reachability.shared,
     ): Backgrounder {
         val settings = NSUserDefaultsSettings(NSUserDefaults(suiteName = "com.happycodelucky.backgrounder.shared"))
         val ephemeral = EphemeralRegistry(settings)
         val state = IOSStateStore(settings)
         val mutexes = IOSTaskMutexes()
         val registry = WorkerRegistry()
+
+        // Pre-execution network gate. Driven by Reachability.shared (default)
+        // or a user-supplied instance (tests). Warm up the platform observer
+        // now by reading isReachable once — Reachability.shared lazily
+        // constructs its nw_path_monitor on first access, costing ~10–100ms.
+        // Forcing it here keeps the first scheduled worker out of that cold path.
+        val gate = ReachabilityGate(reachability)
+        reachability.isReachable // discarded — read is the warmup side-effect
 
         // The dispatcher is pure logic — no platform deps. Constructed here
         // so its lifecycle is co-owned with the rest of the iOS graph; the
@@ -48,6 +59,7 @@ internal object IOSBackgrounderBuilder {
                 registry = registry,
                 ephemeral = ephemeral,
                 eventListener = eventListener,
+                gate = gate,
             )
 
         // Background feed — owns the single library tick identifier. In step 4
@@ -87,6 +99,7 @@ internal object IOSBackgrounderBuilder {
                 state = state,
                 mutexes = mutexes,
                 eventListener = eventListener,
+                gate = gate,
                 applyResult = { task, taskId, attempt, result, guard ->
                     scheduler.applyResult(task, taskId, attempt, result, guard)
                 },
