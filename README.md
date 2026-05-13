@@ -224,13 +224,27 @@ On Android, the sweep is augmented by a per-instance ready gate: if WorkManager 
 
 ## Build & test
 
+[`mise`](https://mise.jdx.dev) pins the JDK, Gradle bootstrap, Python (mkdocs), and `gh` — see [`mise.toml`](./mise.toml). One-time bootstrap:
+
 ```bash
-./gradlew check                                      # all unit tests across iOS sim, macOS native, Android JVM
-./gradlew :backgrounder:linkDebugFrameworkIosArm64         # iOS device framework, SKIE-enhanced
-./gradlew :backgrounder:assembleBackgrounderXCFramework    # the KMMBridge-consumable artifact
+brew install mise
+mise trust && mise install
 ```
 
-`./gradlew check` runs:
+Common tasks:
+
+```bash
+mise run check          # all unit tests across iOS sim, macOS native, Android JVM
+mise run build:ios      # iOS device + Apple Silicon simulator debug frameworks, SKIE-enhanced
+mise run xcframework    # release Backgrounder.xcframework (KMMBridge artifact)
+
+# Raw Gradle equivalents, for reference:
+./gradlew :backgrounder:check
+./gradlew :backgrounder:linkDebugFrameworkIosArm64
+./gradlew :backgrounder:assembleBackgrounderXCFramework
+```
+
+`mise run check` runs:
 - `iosSimulatorArm64Test` — kotlin-test + Turbine + multiplatform-settings test impl
 - `macosArm64Test` — same suite, native macOS
 - `testAndroidHostTest` — JVM-side tests via Robolectric-free pure mappers

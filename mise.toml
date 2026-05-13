@@ -22,7 +22,8 @@
 #   mise run test        — fast inner-loop tests (macOS arm64 only)
 #   mise run check       — what CI runs (lint + every test on every target)
 #   mise run framework   — link iOS arm64 debug framework with SKIE
-#   mise run xcframework — release XCFramework (KMMBridge artifact)
+#   mise run xcframework — release XCFramework (all slices)
+#   mise run spm:dev     — rebuild debug XCFramework for root Package.swift (sample apps)
 #   mise run ci          — exact CI sequence locally
 #   mise run docs:serve  — local mkdocs preview at http://localhost:8000
 #   mise run format      — auto-fix ktlint findings
@@ -44,10 +45,11 @@
 #   applies to file names, types, and comments below.
 
 [tools]
-java   = "temurin-21.0.11+10.0.LTS"   # CLAUDE.md §2 — JDK 21 LTS, Apple Silicon aarch64.
-gradle = "9.4.1"                       # Matches gradle/wrapper/gradle-wrapper.properties.
-python = "3.12.13"                     # docs/requirements.txt mkdocs toolchain.
-gh     = "2.92.0"                      # release.yml uses `gh release create`.
+java        = "temurin-21"   # Latest temurin 21.x — JDK 21 LTS, Apple Silicon.
+gradle      = "9"            # Wrapper is SOT; this is a 9.x fallback for shell use.
+python      = "3.12"         # Latest 3.12.x for the mkdocs toolchain.
+xcodegen    = "latest"       # CLI tool — not in build graph.
+gh          = "latest"       # CI/release CLI — track newest stable.
 
 # Deliberately NOT pinned here:
 #   - kotlin: gradle/libs.versions.toml owns it (CLAUDE.md §2).
@@ -82,8 +84,19 @@ description = "Link the iOS arm64 debug framework with SKIE — fast iOS smoke t
 run = "./gradlew :backgrounder:linkDebugFrameworkIosArm64"
 
 [tasks.xcframework]
-description = "Build the release XCFramework (KMMBridge artifact, CLAUDE.md §9)"
+description = "Build the release XCFramework (all slices — iosArm64, iosSimulatorArm64, macosArm64)"
 run = "./gradlew :backgrounder:assembleBackgrounderXCFramework"
+
+# ── Iteration helpers ───────────────────────────────────────────────────────
+# Fast inner-loop for sample-app consumers. The root Package.swift declares a
+# `.binaryTarget(path: "backgrounder/build/XCFrameworks/debug/Backgrounder.xcframework")`
+# so iOSApp / macOSApp can resolve the framework via `.package(path: "..")`.
+# This task rebuilds that debug artifact; Xcode picks up the new binary the
+# next time the scheme is built — no publish step needed.
+
+[tasks."spm:dev"]
+description = "Rebuild the debug XCFramework that the root Package.swift references (local sample-app consumption)"
+run = "./gradlew :backgrounder:assembleBackgrounderDebugXCFramework"
 
 # ── Test ───────────────────────────────────────────────────────────────────
 

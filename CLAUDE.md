@@ -298,26 +298,73 @@ The same rule applies to `Pair<A, B>` / `Triple<…>` at the public boundary —
 
 ---
 
-## 9. iOS distribution — KMMBridge → Maven → SPM
+## 9. Distribution — Maven Central via vanniktech, local SPM for sample apps
 
-We use **Touchlab's KMMBridge** to publish the iOS framework. **CocoaPods is forbidden.** Do not add `cocoapods { ... }` blocks.
+**CocoaPods is forbidden.** Do not add `cocoapods { ... }` blocks. See §13.
 
-**Pipeline:**
+### Maven Central (active, KMP consumers)
 
-1. Gradle builds an `XCFramework` with `iosArm64` + `iosSimulatorArm64` slices. No x86 simulator. SKIE-enhanced.
-2. KMMBridge zips the `XCFramework` and **publishes the zip as a Maven artifact** to our Maven repository.
-3. KMMBridge generates a `Package.swift` referencing the Maven-hosted zip by URL + checksum, and pushes that `Package.swift` to a dedicated **SPM Git repository** (tagged with the version).
-4. The iOS app's `Package.swift` depends on the SPM repo, pinned to a version tag.
+The primary distribution channel is **Maven Central** via the vanniktech `maven-publish` plugin.
 
-**Rules:**
+**Coordinates:** `com.happycodelucky.backgrounder:backgrounder`
 
-- Maven coordinates and the SPM repo URL are configured in `gradle/kmmbridge.properties`.
-- Versioning is automated by KMMBridge (timestamp- or git-tag-based, configured per branch).
-- iOS engineers never open a Gradle file. They `swift package update` and consume tagged versions.
-- Don't vendor `XCFramework` zips into the iOS repo. Everything flows through Maven + SPM.
-- `Package.swift` is generated. Don't hand-edit.
+**What gets published in one Gradle invocation:**
 
-**Local development override:** the iOS app supports a local SPM path pointing at the Gradle build output. Run `./gradlew :backgrounder:assembleXCFramework`, then Xcode picks up changes without a publish step. The path override is documented in `iOSApp/README.md`.
+- The Android AAR.
+- The `kotlinMultiplatform` metadata module (`.module` file) that ties every target together.
+- Per-target klibs: `backgrounder-iosarm64`, `backgrounder-iossimulatorarm64`, `backgrounder-macosarm64`, `backgrounder-android`.
+- Sources / javadoc jars next to each, with detached GPG signatures.
+
+KMP consumers just add `mavenCentral()` to their repositories and write:
+
+```kotlin
+// commonMain
+implementation("com.happycodelucky.backgrounder:backgrounder:X.Y.Z")
+```
+
+Gradle resolves the right per-target klib automatically. No extra setup needed on the consumer side.
+
+### Release pipeline
+
+Releases are triggered via `workflow_dispatch` on `.github/workflows/release.yml`:
+
+1. The runner picks `bumpType` (patch / minor / major). The patch is always `GITHUB_RUN_NUMBER` — a monotonic counter that auto-advances on re-runs.
+2. `dryRun=true` (the default) uploads to Central Portal staging only — the deployment sits in "validated" state. Review it at https://central.sonatype.com/ and click Publish (or Drop). This is safe to run frequently.
+3. `dryRun=false` runs `publishAndReleaseToMavenCentral` — irreversible. Tags the commit and creates a GitHub Release.
+
+The `automaticRelease = false` flag in `backgrounder/build.gradle.kts` is what makes dry-run behaviour correct. Do not flip it without reading the comment there.
+
+**Secrets:** the four `MAVEN_CENTRAL_*` secrets live on the `continous-deloyment` GitHub environment (yes, the typo — it's the literal environment name; don't fix it without renaming the environment on both `backgrounder` and `reachable` in lockstep).
+
+### Local SPM (sample apps inside this repo)
+
+Pure-Swift consumers (no Kotlin in their project) need the XCFramework directly. The root `Package.swift` exposes a `.binaryTarget(path:)` pointing at the debug XCFramework build output:
+
+```
+backgrounder/build/XCFrameworks/debug/Backgrounder.xcframework
+```
+
+Sample apps under `/iOSApp` and `/macOSApp` consume this via `.package(path: "..")` in their own `Package.swift`. This is suitable for apps that live inside this repo and for vendored consumption. It is **not** a remote distribution path.
+
+**Rebuilding the debug XCFramework:**
+
+```sh
+mise run spm:dev
+# or equivalently:
+./gradlew :backgrounder:assembleBackgrounderDebugXCFramework
+```
+
+**Rebuilding the release XCFramework:**
+
+```sh
+mise run xcframework
+# or equivalently:
+./gradlew :backgrounder:assembleBackgrounderXCFramework
+```
+
+### Future: remote SPM distribution (KMMBridge)
+
+Remote SPM distribution — where a hosted XCFramework zip is referenced by URL + checksum from a tagged `Package.swift` in an SPM Git repository — is **future work**. The original architectural sketch used Touchlab's KMMBridge to automate this pipeline (build XCFramework → zip → publish zip to Maven → generate `Package.swift` → push to SPM repo → tag). That wiring was never completed and is intentionally absent. See git history for the architectural sketch; re-introduce when an SPM-side delivery story is needed for non-KMP iOS / macOS consumers.
 
 ---
 
