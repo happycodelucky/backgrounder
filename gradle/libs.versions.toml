@@ -49,8 +49,10 @@ kermit = "2.0.8"
 # Network-reachability predicate for the WorkConstraints.networkRequired gate.
 # `:reachable` is the production artifact (commonMain). `:reachable-testing`
 # (commonTest) ships the upstream-blessed FakeReachability + withFakeReachability
-# install/uninstall helper — replaces our hand-rolled fake from PR-14 round 1.
-reachable = "0.11.10"
+# install/uninstall helper. 0.12.x collapses the previous `Metering` enum
+# (Unmetered / Metered / Constrained) into a single `isDataMetered: Boolean`
+# on `ReachabilityStatus`, and renames `reachable` → `isReachable`.
+reachable = "0.12.11"
 
 # --- Testing ----------------------------------------------------------------
 turbine = "1.2.1"

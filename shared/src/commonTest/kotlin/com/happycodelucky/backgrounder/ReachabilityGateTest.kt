@@ -1,6 +1,5 @@
 package com.happycodelucky.backgrounder
 
-import com.happycodelucky.reachable.Metering
 import com.happycodelucky.reachable.ReachabilityStatus
 import com.happycodelucky.reachable.Transport
 import com.happycodelucky.reachable.testing.FakeReachability
@@ -25,7 +24,7 @@ import kotlinx.coroutines.async as coroutinesAsync
 //
 // `:reachable-testing` exposes a constructor `FakeReachability(initial: ReachabilityStatus)`
 // plus per-axis setters. These two helpers keep the gate test's call sites
-// matching the shape we used pre-0.11.10 (`offline()` / `online(transport, metering)`)
+// matching the shape we used pre-0.11.10 (`offline()` / `online(transport, isDataMetered)`)
 // without re-introducing the hand-rolled fake. Drop these if more sites
 // need them; promote into a shared test helper.
 
@@ -33,10 +32,10 @@ private fun fakeOffline(): FakeReachability = FakeReachability()
 
 private fun fakeOnline(
     transport: Transport = Transport.Wifi,
-    metering: Metering = Metering.Unmetered,
+    isDataMetered: Boolean = false,
 ): FakeReachability =
     FakeReachability(
-        ReachabilityStatus(reachable = true, transport = transport, metering = metering),
+        ReachabilityStatus(isReachable = true, transport = transport, isDataMetered = isDataMetered),
     )
 
 /**
@@ -91,7 +90,7 @@ class ReachabilityGateTest {
             // and the flow's collector is registered before we emit.
             advanceTimeBy(100.milliseconds)
             reachability.emit(
-                ReachabilityStatus(reachable = true, transport = Transport.Wifi, metering = Metering.Unmetered),
+                ReachabilityStatus(isReachable = true, transport = Transport.Wifi, isDataMetered = false),
             )
             val result = deferredResult.await()
             assertIs<ReachabilityGate.GateResult.Met>(result)
@@ -132,7 +131,7 @@ class ReachabilityGateTest {
             advanceTimeBy(50.milliseconds)
             // Cellular — reachable but Metered. Gate must keep waiting.
             reachability.emit(
-                ReachabilityStatus(reachable = true, transport = Transport.Cellular, metering = Metering.Metered),
+                ReachabilityStatus(isReachable = true, transport = Transport.Cellular, isDataMetered = true),
             )
             advanceTimeBy(50.milliseconds)
             // Should still be waiting; deferred has not completed.
@@ -143,7 +142,7 @@ class ReachabilityGateTest {
 
             // Now flip to Wi-Fi (Unmetered).
             reachability.emit(
-                ReachabilityStatus(reachable = true, transport = Transport.Wifi, metering = Metering.Unmetered),
+                ReachabilityStatus(isReachable = true, transport = Transport.Wifi, isDataMetered = false),
             )
             val result = deferred.await()
             assertIs<ReachabilityGate.GateResult.Met>(result)

@@ -42,15 +42,35 @@ The formula `min(5.seconds, budget / 4)` quarters the budget so a network gate n
 
 ## `Unmetered` semantics
 
-Reachable reports a `Metering` value alongside reachability:
+Reachable reports an `isDataMetered: Boolean` axis alongside reachability:
 
-- `Metering.Unmetered` — Wi-Fi or ethernet.
-- `Metering.Metered` — cellular, including a personal hotspot tethered over Wi-Fi from another iPhone.
-- `Metering.Constrained` — Low Data Mode (Apple only). Treated as **not** Unmetered — the gate keeps waiting.
+- `isDataMetered = false` — Wi-Fi or ethernet.
+- `isDataMetered = true` — cellular, personal hotspots, and on Apple, Low Data Mode (the previous three-state `Metering` enum collapsed to one bit in reachable 0.12.x; "expensive" and "constrained" fold together).
 
-The gate only resolves `Unmetered` against `Metering.Unmetered`. An iPhone on cellular hotspot has `reachable=true, metering=Metered`; an `Unmetered` request waits past it. This is a fidelity improvement over the older behaviour where iOS downgraded `Unmetered` to `Any`.
+The gate resolves `Unmetered` against `isDataMetered == false`. An iPhone on cellular hotspot has `isReachable = true, isDataMetered = true`; an `Unmetered` request waits past it. This is a fidelity improvement over the older iOS behaviour where `Unmetered` downgraded to `Any`.
 
 On Android, `Unmetered` translates to `NetworkType.UNMETERED` in WorkManager's native gating — same effect as on Apple, just enforced by the OS.
+
+## Reading reachability from inside `execute()`
+
+The library doesn't proxy reachability through `WorkerContext`. If you want to inspect the current state inside a worker — for instance, to defer a large transfer on metered networks without forbidding metered entirely — read `Reachability.shared` directly:
+
+```kotlin
+import com.happycodelucky.reachable.Reachability
+
+override suspend fun execute(ctx: WorkerContext): WorkResult {
+    val status = Reachability.shared.status.value
+    if (status.isDataMetered && payloadBytes > 5_000_000) {
+        return WorkResult.Retry // try again on Wi-Fi
+    }
+    api.upload(payload)
+    return WorkResult.Success
+}
+```
+
+`Reachability.shared` is the same singleton the gate consults, so tests' `withFakeReachability { }` install affects both the gate **and** any worker reads transparently — no extra plumbing required. If you need the live `StateFlow` for a long-running worker that wants to react to mid-task transitions, `Reachability.shared.status.collect { … }` works too — workers run on a coroutine.
+
+The hard requirement (`NetworkRequirement.Unmetered`) and the soft worker-side check are complementary: declare the strict version on the request when "no metered, ever" is the answer; inspect `Reachability.shared` when policy is conditional on payload size, attempt count, or anything else only the worker knows.
 
 ## Testing
 
@@ -66,14 +86,14 @@ The library reads `Reachability.shared` directly — there is no Backgrounder-si
         )
 
         // Drive transitions deterministically — `emit(...)`, `setReachable(...)`,
-        // `setTransport(...)`, `setMetering(...)` are all on the upstream FakeReachability.
-        fake.emit(ReachabilityStatus(reachable = true, transport = Transport.Wifi, metering = Metering.Unmetered))
+        // `setTransport(...)`, `setDataMetered(...)` are all on the upstream FakeReachability.
+        fake.emit(ReachabilityStatus(isReachable = true, transport = Transport.Wifi, isDataMetered = false))
         // ...
     }
 }
 ```
 
-`withFakeReachability` restores the previous override (typically the production singleton) on exit, even on exception. Nested calls are LIFO-safe by construction. See the [reachable-testing module](https://github.com/happycodelucky/reachable/tree/main/reachable-testing) for the full driver API (`setReachable`, `setTransport`, `setMetering`, `reset`, `closeCallCount`, `wasClosed`).
+`withFakeReachability` restores the previous override (typically the production singleton) on exit, even on exception. Nested calls are LIFO-safe by construction. See the [reachable-testing module](https://github.com/happycodelucky/reachable/tree/main/reachable-testing) for the full driver API (`setReachable`, `setTransport`, `setDataMetered`, `reset`, `closeCallCount`, `wasClosed`).
 
 Backgrounder's public `Backgrounder.create(...)` factory has no `reachability:` parameter on either platform — the install hook is the *only* path. This keeps the Swift surface clean (no reachable types leak into Backgrounder's framework) and matches how every other consumer of `Reachability.shared` is tested.
 
