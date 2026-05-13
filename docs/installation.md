@@ -95,7 +95,7 @@ Use the same SPM repository as iOS. The `XCFramework` carries a `macosArm64` sli
 When developing against an unpublished version of Backgrounder, point your iOS app's SPM dependency at a local checkout:
 
 ```bash
-# In the Backgrounder repo:
+# In the Backgrounder repo (raw Gradle, or `mise run xcframework` if you use mise):
 ./gradlew :backgrounder:assembleBackgrounderXCFramework
 # → backgrounder/build/XCFrameworks/release/Backgrounder.xcframework
 
