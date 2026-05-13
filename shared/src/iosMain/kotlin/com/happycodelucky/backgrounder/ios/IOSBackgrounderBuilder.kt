@@ -8,7 +8,9 @@ import com.happycodelucky.backgrounder.BackgrounderCore
 import com.happycodelucky.backgrounder.BackgrounderEventListener
 import com.happycodelucky.backgrounder.EphemeralRegistry
 import com.happycodelucky.backgrounder.PendingInstantCalls
+import com.happycodelucky.backgrounder.ReachabilityGate
 import com.happycodelucky.backgrounder.WorkerRegistry
+import com.happycodelucky.reachable.Reachability
 import com.russhwolf.settings.NSUserDefaultsSettings
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.Foundation.NSUserDefaults
@@ -38,6 +40,18 @@ internal object IOSBackgrounderBuilder {
         val mutexes = IOSTaskMutexes()
         val registry = WorkerRegistry()
 
+        // Pre-execution network gate. Driven by `Reachability.shared` —
+        // process-lifetime singleton. Tests override the singleton via
+        // the `:reachable-testing` artifact's `withFakeReachability { }`
+        // install hook; no Backgrounder-side parameter is needed.
+        //
+        // Warm up the platform observer now by reading isReachable once —
+        // Reachability.shared lazily constructs its nw_path_monitor on
+        // first access (cost ~10–100ms on Apple). Forcing it here keeps
+        // the first scheduled worker out of that cold path.
+        val gate = ReachabilityGate(Reachability.shared)
+        Reachability.shared.isReachable // discarded — read is the warmup side-effect
+
         // The dispatcher is pure logic — no platform deps. Constructed here
         // so its lifecycle is co-owned with the rest of the iOS graph; the
         // background feed consumes it directly (foreground feed in step 5).
@@ -48,6 +62,7 @@ internal object IOSBackgrounderBuilder {
                 registry = registry,
                 ephemeral = ephemeral,
                 eventListener = eventListener,
+                gate = gate,
             )
 
         // Background feed — owns the single library tick identifier. In step 4
@@ -87,6 +102,7 @@ internal object IOSBackgrounderBuilder {
                 state = state,
                 mutexes = mutexes,
                 eventListener = eventListener,
+                gate = gate,
                 applyResult = { task, taskId, attempt, result, guard ->
                     scheduler.applyResult(task, taskId, attempt, result, guard)
                 },

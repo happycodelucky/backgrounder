@@ -50,6 +50,8 @@ backgrounder.scheduler.schedule(
 )
 ```
 
+`networkRequired` is honoured everywhere — Android holds the worker via WorkManager's native constraint gating; iOS and macOS use a library-managed pre-execution reachability gate (powered by [reachable](https://github.com/happycodelucky/reachable)) that waits up to 5 seconds before short-circuiting to `WorkResult.Retry`. See [Recipes → Require a network connection](https://happycodelucky.github.io/backgrounder/recipes/network-required/).
+
 Or for "do this work in the background **right now** and give me back the typed result" — no constraints, no retries, structured `await` — use `runNow`:
 
 ```kotlin

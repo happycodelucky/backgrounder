@@ -221,6 +221,7 @@ internal class BGTaskBackedScheduler(
             ephemeral = request.ephemeral,
             intervalMs = null,
             nextRunEpochMs = nextRun,
+            networkRequired = request.constraints.networkRequired,
         )
         val osRequest =
             newOSRequest(request.taskId, request.executionHint).apply {
@@ -239,6 +240,7 @@ internal class BGTaskBackedScheduler(
             ephemeral = request.ephemeral,
             intervalMs = request.interval.inWholeMilliseconds,
             nextRunEpochMs = nextRun,
+            networkRequired = request.constraints.networkRequired,
         )
         // Step 6 cut-over: no per-`TaskId` BGTaskRequest. The dispatcher decides
         // what runs at each tick; both feeds wake up to consult its

@@ -4,10 +4,12 @@ import co.touchlab.kermit.Logger
 import com.happycodelucky.backgrounder.BackgrounderEventListener
 import com.happycodelucky.backgrounder.CompletionGuard
 import com.happycodelucky.backgrounder.PlatformCapabilities
+import com.happycodelucky.backgrounder.ReachabilityGate
 import com.happycodelucky.backgrounder.TaskId
 import com.happycodelucky.backgrounder.WorkResult
 import com.happycodelucky.backgrounder.WorkerContext
 import com.happycodelucky.backgrounder.WorkerRegistry
+import com.happycodelucky.backgrounder.gateBudgetFor
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -61,6 +63,7 @@ internal class IOSCoroutineBridge(
     private val state: IOSStateStore,
     private val mutexes: IOSTaskMutexes,
     private val eventListener: BackgrounderEventListener,
+    private val gate: ReachabilityGate,
     private val applyResult: suspend (BGTask, TaskId, Int, WorkResult, CompletionGuard) -> Unit,
 ) {
     private val log = Logger.withTag("Backgrounder/iOS")
@@ -75,11 +78,14 @@ internal class IOSCoroutineBridge(
         taskId: TaskId,
     ) {
         val tagged = log.withTag("Backgrounder/iOS/$taskId")
-        // Snapshot attempt/input synchronously (off the main queue) before launching.
+        // Snapshot attempt/input/networkRequired synchronously (off the main queue)
+        // before launching. The `networkRequired` read drives the pre-execution
+        // reachability gate further down. Defaults to `None` for v1-schema state.
         val attempt = state.readAttempt(taskId)
         val input = state.readInput(taskId)
+        val networkRequired = state.readNetworkRequired(taskId)
         eventListener.onStarted(taskId, attempt)
-        tagged.d { "handle: attempt=$attempt" }
+        tagged.d { "handle: attempt=$attempt networkRequired=$networkRequired" }
 
         val capabilities = capabilitiesFor(task)
         val guard = CompletionGuard()
@@ -116,6 +122,24 @@ internal class IOSCoroutineBridge(
                             input = input,
                             capabilities = capabilities,
                         )
+
+                    // ── Reachability gate (review-loop round 2). Closes the
+                    // iOS gap where `BGAppRefreshTaskRequest` ignores the
+                    // network-required field entirely and `BGProcessingTaskRequest`
+                    // only treats it as advisory. The gate waits up to
+                    // `min(5s, capabilities.maxExecutionTime / 4)` for the
+                    // network requirement to be satisfied; on timeout we
+                    // short-circuit to `WorkResult.Retry` so the scheduler's
+                    // backoff path reschedules — exactly the contract the
+                    // existing periodic/one-shot paths already document.
+                    val gateBudget = gateBudgetFor(capabilities)
+                    val gateResult = gate.awaitReachable(networkRequired, gateBudget)
+                    if (gateResult is ReachabilityGate.GateResult.TimedOut) {
+                        tagged.i { "reachability gate timed out (requirement=$networkRequired, budget=$gateBudget); deferring as Retry" }
+                        applyResult(task, taskId, attempt, WorkResult.Retry, guard)
+                        eventListener.onCompleted(taskId, attempt, WorkResult.Retry)
+                        return@withMutex
+                    }
 
                     val result: WorkResult =
                         try {

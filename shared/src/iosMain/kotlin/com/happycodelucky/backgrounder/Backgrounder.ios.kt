@@ -40,6 +40,13 @@ import kotlin.native.ObjCName
  *   [Backgrounder.register] for every task id, then
  *   [Backgrounder.start] before the launch method returns.
  *
+ * The pre-execution `WorkConstraints.networkRequired` gate reads from
+ * `Reachability.shared` (process-lifetime singleton). Tests install a
+ * `FakeReachability` via the `:reachable-testing` artifact's
+ * `withFakeReachability { … }` helper, which transparently overrides
+ * `Reachability.shared` for the duration of the test block — no
+ * Backgrounder-specific test seam is required.
+ *
  * `@OptIn(ExperimentalObjCName::class)`: required by SKIE for the
  * Swift-rename annotation. Stable in practice.
  */

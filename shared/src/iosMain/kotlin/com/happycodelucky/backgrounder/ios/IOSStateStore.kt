@@ -1,6 +1,7 @@
 package com.happycodelucky.backgrounder.ios
 
 import co.touchlab.kermit.Logger
+import com.happycodelucky.backgrounder.NetworkRequirement
 import com.happycodelucky.backgrounder.TaskId
 import com.happycodelucky.backgrounder.WorkInput
 import com.happycodelucky.backgrounder.WorkResult
@@ -29,6 +30,7 @@ internal class IOSStateStore(
         ephemeral: Boolean,
         intervalMs: Long?,
         nextRunEpochMs: Long,
+        networkRequired: NetworkRequirement,
     ) {
         val k = keys(taskId)
         settings.putInt(k.schemaVersion, SCHEMA_VERSION)
@@ -43,6 +45,7 @@ internal class IOSStateStore(
         }
         settings.putInt(k.attempt, 0)
         settings.putLong(k.nextRunEpochMs, nextRunEpochMs)
+        settings.putString(k.networkRequired, networkRequired.name)
         settings.remove(k.lastResult)
         settings.remove(k.lastRunEpochMs)
     }
@@ -55,6 +58,20 @@ internal class IOSStateStore(
     fun readActive(taskId: TaskId): Boolean = settings.getBoolean(keys(taskId).active, false)
 
     fun readEphemeral(taskId: TaskId): Boolean = settings.getBoolean(keys(taskId).ephemeral, false)
+
+    /**
+     * Read the persisted `networkRequired` constraint for the task.
+     *
+     * Returns [NetworkRequirement.None] when the key is absent — covers two
+     * cases: (1) a task scheduled before schema v2 introduced the field; and
+     * (2) an unknown token written by a future schema we don't understand.
+     * Either way the safe default is "don't gate", preserving today's
+     * "worker fires immediately" behaviour for legacy state.
+     */
+    fun readNetworkRequired(taskId: TaskId): NetworkRequirement {
+        val token = settings.getStringOrNull(keys(taskId).networkRequired) ?: return NetworkRequirement.None
+        return NetworkRequirement.entries.firstOrNull { it.name == token } ?: NetworkRequirement.None
+    }
 
     fun readIntervalMs(taskId: TaskId): Long? {
         val k = keys(taskId)
@@ -126,6 +143,7 @@ internal class IOSStateStore(
             k.lastResult,
             k.lastRunEpochMs,
             k.nextRunEpochMs,
+            k.networkRequired,
         ).forEach(settings::remove)
     }
 
@@ -158,6 +176,7 @@ internal class IOSStateStore(
         val lastResult: String,
         val lastRunEpochMs: String,
         val nextRunEpochMs: String,
+        val networkRequired: String,
     )
 
     private fun keys(taskId: TaskId): Keys {
@@ -173,6 +192,7 @@ internal class IOSStateStore(
             lastResult = "${base}last_result",
             lastRunEpochMs = "${base}last_run_epoch_ms",
             nextRunEpochMs = "${base}next_run_epoch_ms",
+            networkRequired = "${base}network_required",
         )
     }
 
@@ -184,7 +204,17 @@ internal class IOSStateStore(
     }
 
     internal companion object {
-        internal const val SCHEMA_VERSION: Int = 1
+        /**
+         * Schema version of the persisted per-task layout.
+         *
+         * - v1: kind, active, ephemeral, interval_ms, attempt, input,
+         *   last_result, last_run_epoch_ms, next_run_epoch_ms.
+         * - v2: adds `network_required` to drive the reachability gate
+         *   (see [ReachabilityGate]). Readers default missing v1 keys to
+         *   [NetworkRequirement.None], so no migration sweep is needed —
+         *   legacy tasks dispatch immediately, as they did before.
+         */
+        internal const val SCHEMA_VERSION: Int = 2
         private const val PREFIX: String = "tasks."
         private const val SCHEMA_VERSION_SUFFIX: String = ".schema_version"
     }

@@ -26,6 +26,11 @@ import kotlin.native.ObjCName
  * Call [Backgrounder.shutdown] from `applicationWillTerminate` to
  * cancel the scheduler's coroutine scope cleanly.
  *
+ * The pre-execution `WorkConstraints.networkRequired` gate reads from
+ * `Reachability.shared` (process-lifetime singleton). Tests install a
+ * `FakeReachability` via the `:reachable-testing` artifact's
+ * `withFakeReachability { … }` helper.
+ *
  * `@OptIn(ExperimentalObjCName::class)`: required by SKIE for the
  * Swift-rename annotation. Stable in practice.
  */

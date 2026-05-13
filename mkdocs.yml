@@ -112,6 +112,7 @@ nav:
     - recipes/cancel.md
     - recipes/inspect.md
     - recipes/input.md
+    - recipes/network-required.md
     - recipes/retry-backoff.md
     - recipes/test-workers.md
   - Platforms:

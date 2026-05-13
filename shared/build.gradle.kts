@@ -114,6 +114,12 @@ kotlin {
             implementation(libs.multiplatform.settings)
             implementation(libs.multiplatform.settings.coroutines)
             implementation(libs.kermit)
+            // Drives the pre-execution `WorkConstraints.networkRequired` gate.
+            // Apple platforms back this with `nw_path_monitor` (Network framework);
+            // Android relies on WorkManager's native gating, but `reachable` is
+            // still on commonMain because the public type leaks into builder
+            // signatures uniformly across all platforms.
+            implementation(libs.reachable)
         }
 
         commonTest.dependencies {
@@ -122,6 +128,10 @@ kotlin {
             implementation(libs.turbine)
             implementation(libs.multiplatform.settings.test)
             implementation(libs.kermit.test)
+            // Upstream-blessed FakeReachability + withFakeReachability install
+            // helper. Replaces our hand-rolled commonTest fake; tests interact
+            // with `Reachability.shared` directly via the install/uninstall hook.
+            implementation(libs.reachable.testing)
         }
 
         androidMain.dependencies {
