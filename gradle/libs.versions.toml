@@ -17,8 +17,16 @@
 kotlin = "2.3.20"
 agp = "9.2.0"                  # com.android.kotlin.multiplatform.library variant (CLAUDE.md §2).
 skie = "0.10.11"               # Supports Kotlin 2.3.20.
-kmmbridge = "1.2.1"
 dokka = "2.0.0"                # Kotlin API doc generator; Dokka v2 task layout.
+# vanniktech's gradle-maven-publish-plugin — publishes signed artifacts to the
+# Sonatype Central Portal (central.sonatype.com). 0.36.0 is the first release
+# that pins the JDK17 / Gradle 9 / AGP 9 floor we're already on, and the first
+# to officially support com.android.kotlin.multiplatform.library publications.
+# There is no official Sonatype-published Gradle plugin in 2026; this is the
+# community-recommended path. The `mavenPublishing { }` block in
+# backgrounder/build.gradle.kts owns the Central Portal target, POM metadata,
+# and in-memory GPG signing configuration.
+mavenPublish = "0.36.0"
 
 # --- Android SDK ------------------------------------------------------------
 android-compile-sdk = "36"
@@ -103,4 +111,7 @@ android-kotlin-multiplatform-library = { id = "com.android.kotlin.multiplatform.
 skie = { id = "co.touchlab.skie", version.ref = "skie" }
 dokka = { id = "org.jetbrains.dokka", version.ref = "dokka" }
 ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlintGradle" }
-kmmbridge = { id = "co.touchlab.kmmbridge", version.ref = "kmmbridge" }
+# Vanniktech Maven Publish — Maven Central Portal upload + GPG signing + sources/
+# javadoc jars + POM-metadata DSL. See `mavenPublishing { }` in
+# backgrounder/build.gradle.kts for the configuration.
+maven-publish = { id = "com.vanniktech.maven.publish", version.ref = "mavenPublish" }

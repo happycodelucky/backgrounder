@@ -1,29 +1,77 @@
 name: Release
 
-# Conservative release pipeline: build the XCFramework, zip it, attach to a
-# GitHub Release. KMMBridge / Maven Central publishing isn't wired in v1 —
-# when that lands (cut against 0.2.0), this workflow grows the Maven Central
-# steps and the GitHub Release becomes a thin tag-and-notes wrapper.
-# See reachable's release.yml for the Maven Central template.
-
+# Maven Central is the only active distribution channel. The previous
+# XCFramework-zip / GitHub Release pipeline was removed — see git history
+# if you need to restore an SPM-side delivery story for non-KMP iOS / macOS
+# consumers.
+#
+# The runner picks `bumpType` (patch / minor / major); the workflow computes
+# the actual version. The patch component is *always* `GITHUB_RUN_NUMBER` —
+# the monotonic counter for this workflow. Runners never type a patch
+# number; they only decide which axis of the existing version to bump.
+#
+# Examples (latest release = v0.3.7, this is run #42):
+#   bumpType=patch                             → 0.3.42
+#   bumpType=minor                             → 0.4.42
+#   bumpType=major                             → 1.0.42
+#   bumpType=patch + versionSuffix=beta        → 0.3.42-beta
+#   bumpType=minor + versionSuffix=rc.1        → 0.4.42-rc.1
+#   bumpType=major + versionSuffix=preview     → 1.0.42-preview
+#
+# The optional `versionSuffix` input adds a SemVer pre-release identifier
+# (`MAJOR.MINOR.PATCH-SUFFIX`). Pre-release versions sort before their
+# corresponding final release in semver — `0.3.42-rc.1` is older than
+# `0.3.42`. The suffix is validated against the SemVer 2.0 grammar before
+# anything is published.
+#
+# `dryRun` defaults to `true` because Maven Central releases are
+# **irreversible** — Sonatype never deletes a published artifact. The dry
+# run uploads to the Central Portal staging area only and stops there,
+# so the artifact set can be reviewed on https://central.sonatype.com/
+# before manually clicking Publish (or Drop). Flip the input to `false`
+# to publish + auto-release in one step.
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: Release version without the v prefix (e.g. 0.2.0)
+      bumpType:
+        description: Which axis to bump (patch is auto-derived from the run number)
         required: true
-        type: string
-      notes:
-        description: Release notes for GitHub Releases (optional; auto-generated if empty)
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+        default: patch
+      versionSuffix:
+        description: Optional pre-release suffix appended after a dash (e.g. beta, preview, rc.1)
         required: false
         type: string
+        default: ""
+      dryRun:
+        description: Upload to Central staging only; do not auto-release. Default true.
+        required: true
+        type: boolean
+        default: true
 
+# `contents: write` lets the workflow push the version tag and create the
+# GitHub Release after a successful Maven Central publish. Tagging happens
+# only on `dryRun=false` — see "Tag + create GitHub Release" step.
 permissions:
   contents: write
 
 jobs:
   release:
     runs-on: macos-latest
+
+    # The four MAVEN_CENTRAL_* secrets live on the `continous-deloyment`
+    # GitHub environment, not the repository scope. Without this binding
+    # `secrets.MAVEN_CENTRAL_*` resolves to the empty string at runtime
+    # and vanniktech fails with cryptic auth / signing errors that look
+    # like a credentials problem in the downstream tool.
+    #
+    # Environment name carried over from reachable — yes, the typo.
+    # Don't fix it without renaming the environment on both repos in lockstep.
+    environment: continous-deloyment
 
     steps:
       - name: Check out repository
@@ -33,14 +81,135 @@ jobs:
           # commits between the previous tag and this release.
           fetch-depth: 0
 
-      - name: Derive release metadata
+      # Compute the version up front so every downstream step references
+      # the same value. The patch is *always* GITHUB_RUN_NUMBER (monotonic
+      # per-workflow counter) — re-running after a failure gets a fresh
+      # patch automatically, avoiding "tag already exists" conflicts.
+      #
+      # Major / minor bumps reset lower components: bumping minor from
+      # 0.3.7 produces 0.4.<run>, not 0.4.7.
+      #
+      # First-release fallback: if no previous tag exists yet, we start
+      # from 0.0.<run>, 0.1.<run>, or 1.0.<run> depending on bumpType.
+      - name: Compute release version
         env:
-          INPUT_VERSION: ${{ inputs.version }}
-        run: echo "TAG=v${INPUT_VERSION}" >> "$GITHUB_ENV"
+          GH_TOKEN: ${{ github.token }}
+          BUMP_TYPE: ${{ inputs.bumpType }}
+          VERSION_SUFFIX: ${{ inputs.versionSuffix }}
+        run: |
+          set -euo pipefail
 
-      # mise pins the JDK, Gradle bootstrap binary, gh, and python (see
-      # /mise.toml). setup-gradle below is layered on top purely for its
-      # build / dependency cache.
+          # Latest tag, or empty if there are no releases yet.
+          LATEST=$(gh release view --json tagName -q .tagName 2>/dev/null || true)
+
+          if [[ -n "$LATEST" ]]; then
+            # Strip the leading `v` and any pre-release suffix (e.g.
+            # v0.3.42-beta → 0.3.42) before parsing — we always bump from
+            # the numeric core, not from a previous pre-release suffix.
+            BASE=${LATEST#v}
+            BASE=${BASE%%-*}
+            IFS='.' read -r MAJOR MINOR _PATCH <<< "$BASE"
+          else
+            echo "No previous release found; starting from 0.0.0 base."
+            MAJOR=0
+            MINOR=0
+            _PATCH=0
+          fi
+
+          case "$BUMP_TYPE" in
+            patch)
+              NEW_MAJOR=$MAJOR
+              NEW_MINOR=$MINOR
+              ;;
+            minor)
+              NEW_MAJOR=$MAJOR
+              NEW_MINOR=$((MINOR + 1))
+              ;;
+            major)
+              NEW_MAJOR=$((MAJOR + 1))
+              NEW_MINOR=0
+              ;;
+            *)
+              echo "::error::Unknown bumpType: $BUMP_TYPE"
+              exit 1
+              ;;
+          esac
+
+          NEW_PATCH=$GITHUB_RUN_NUMBER
+          RELEASE_VERSION="${NEW_MAJOR}.${NEW_MINOR}.${NEW_PATCH}"
+
+          # Optional pre-release suffix. Validate against the SemVer 2.0
+          # pre-release identifier grammar: dot-separated alphanumerics and
+          # hyphens, each segment non-empty and not all leading zeros if
+          # purely numeric. The regex below covers the common cases
+          # (beta, preview, rc.1, alpha.2.fix) and rejects whitespace,
+          # leading dashes, uppercase (which Maven Central treats as a
+          # version-comparison foot-gun).
+          if [[ -n "$VERSION_SUFFIX" ]]; then
+            # Each dot-separated segment must start with an alphanumeric
+            # character. Hyphens are allowed inside a segment but not at
+            # its start — otherwise `0.3.42-` + `-beta` produces `0.3.42--beta`,
+            # which version-comparators handle inconsistently.
+            if [[ ! "$VERSION_SUFFIX" =~ ^[0-9a-z][0-9a-z-]*(\.[0-9a-z][0-9a-z-]*)*$ ]]; then
+              echo "::error::versionSuffix '$VERSION_SUFFIX' is not a valid SemVer pre-release identifier."
+              echo "::error::Allowed: dot-separated lowercase alphanumeric segments (hyphens permitted inside a segment). Examples: beta, preview, rc.1, alpha.2.fix."
+              exit 1
+            fi
+            RELEASE_VERSION="${RELEASE_VERSION}-${VERSION_SUFFIX}"
+          fi
+
+          RELEASE_TAG="v${RELEASE_VERSION}"
+
+          echo "RELEASE_VERSION=$RELEASE_VERSION" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
+
+          # Surface the computed version in the run-page summary so the
+          # runner can see it before the irreversible publish step fires.
+          # If something looks wrong, cancel the run from the Actions UI.
+          {
+            echo "## Release plan"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Previous release | \`${LATEST:-(none)}\` |"
+            echo "| Bump type | \`${BUMP_TYPE}\` |"
+            echo "| Patch source | \`GITHUB_RUN_NUMBER\` (${GITHUB_RUN_NUMBER}) |"
+            echo "| Suffix | \`${VERSION_SUFFIX:-(none)}\` |"
+            echo "| **Computed version** | **\`${RELEASE_VERSION}\`** |"
+            echo "| Tag | \`${RELEASE_TAG}\` |"
+            echo "| Dry run? | \`${{ inputs.dryRun }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "Computed release version: $RELEASE_VERSION"
+
+      # Belt-and-suspenders safety check: fail before any publish if the
+      # computed version is already on Maven Central. Sonatype rejects
+      # re-uploads with a confusing "staging failed" error; surfacing the
+      # collision here gives a clear "this version is already published"
+      # message and saves a few minutes of build time on a doomed run.
+      #
+      # Checks every module that ships under com.happycodelucky.backgrounder.
+      # Add artifact ids to the loop when new publishable modules land (e.g.
+      # a future `:backgrounder-testing` companion — just append the artifact
+      # id and the next release picks it up automatically). The grep is
+      # exact-match for `<version>X.Y.Z</version>` to avoid substring matches
+      # (e.g. version 0.3.4 matching 0.3.42).
+      - name: Verify version not already published
+        run: |
+          set -euo pipefail
+          ESCAPED="${RELEASE_VERSION//./\\.}"
+          for ARTIFACT in backgrounder; do
+            METADATA_URL="https://repo1.maven.org/maven2/com/happycodelucky/backgrounder/${ARTIFACT}/maven-metadata.xml"
+            if curl -sf "$METADATA_URL" 2>/dev/null | grep -qE "<version>${ESCAPED}</version>"; then
+              echo "::error::Version $RELEASE_VERSION is already published as com.happycodelucky.backgrounder:${ARTIFACT} on Maven Central."
+              echo "::error::Maven Central refuses to overwrite published artifacts. Re-run the workflow to get a fresh GITHUB_RUN_NUMBER patch."
+              exit 1
+            fi
+          done
+          echo "Version $RELEASE_VERSION is not yet on Maven Central — safe to publish."
+
+      # mise pins JDK, gradle, etc. (see /mise.toml). setup-gradle below is
+      # layered on top solely for its build / dependency cache.
       - name: Set up mise toolchain
         uses: jdx/mise-action@v4
         with:
@@ -53,68 +222,107 @@ jobs:
       - name: Set up Gradle cache
         uses: gradle/actions/setup-gradle@v5
 
-      # Build the KMMBridge-consumable XCFramework (CLAUDE.md §9). KMMBridge
-      # itself isn't fully wired in v1; that lands when we cut 0.2.0 with
-      # Maven publish. For now we ship the XCFramework as a GitHub Release
-      # asset so iOS / macOS consumers can drop it in directly. The CI
-      # version stamp is passed through to Gradle via ORG_GRADLE_PROJECT_version
-      # — the standard env-var form of `-Pversion=…` so `mise run xcframework`
-      # doesn't need to know CI is the caller.
-      - name: Build release artifacts
+      # Vanniktech `mavenPublishing { }` exposes two umbrella tasks (see
+      # backgrounder/build.gradle.kts). The "stops at staging" behaviour of
+      # the dry-run task is contingent on `automaticRelease = false` in
+      # each module's `mavenPublishing { }` config — if that ever flips
+      # back to `true` in any module the dry run silently becomes a real
+      # publish for that module. See the comments on
+      # `publishToMavenCentral(automaticRelease = …)` in
+      # backgrounder/build.gradle.kts.
+      #
+      #   * publishToMavenCentral             — build + sign + upload to
+      #     Central staging. STOPS before the irreversible "release" step.
+      #     Used for dry runs; review the staged deployment on
+      #     https://central.sonatype.com/ before manually publishing.
+      #
+      #   * publishAndReleaseToMavenCentral   — full pipeline. Uploads,
+      #     closes the deployment, and releases it to public Maven Central.
+      #     Cannot be undone. Used only when `dryRun=false`.
+      #
+      # The Gradle invocation is *not* scoped to a specific module
+      # (no `:backgrounder:` prefix) — that way it runs across every module
+      # that declares a `mavenPublishing { }` block. Currently that's
+      # `:backgrounder`. Adding a new publishable module is free: declare the
+      # block and the next release picks it up.
+      #
+      # Both tasks publish every publication the KMP plugin registered
+      # (Android AAR, kotlinMultiplatform metadata, iosArm64,
+      # iosSimulatorArm64, macosArm64 klibs) plus their sources / javadoc
+      # jars and detached GPG signatures. Snapshot versions (anything
+      # ending in `-SNAPSHOT`) auto-route to the Central Portal snapshots
+      # endpoint.
+      - name: Publish to Maven Central (dry run — staging only)
+        if: ${{ inputs.dryRun }}
         env:
-          ORG_GRADLE_PROJECT_version: ${{ inputs.version }}
-        run: mise run xcframework
-
-      # Zip the XCFramework so GitHub Releases serves a single file. Consumers
-      # unzip and consume the resulting Backgrounder.xcframework directly.
-      - name: Package XCFramework
+          # Vanniktech reads these four properties; Gradle auto-populates
+          # them from ORG_GRADLE_PROJECT_* env vars. See docs/publishing.md.
+          ORG_GRADLE_PROJECT_mavenCentralUsername:       ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword:       ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          # In-memory GPG key: paste the full ASCII-armoured private key
+          # block (`-----BEGIN PGP PRIVATE KEY BLOCK-----` … `-----END PGP
+          # PRIVATE KEY BLOCK-----`) into the GitHub secret. No keyring on
+          # the runner; vanniktech imports the key in-process.
+          ORG_GRADLE_PROJECT_signingInMemoryKey:         ${{ secrets.MAVEN_CENTRAL_SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.MAVEN_CENTRAL_SIGNING_KEY_PASSWORD }}
         run: |
-          cd backgrounder/build/XCFrameworks/release
-          zip -ry "Backgrounder-${{ inputs.version }}.xcframework.zip" Backgrounder.xcframework
+          ./gradlew publishToMavenCentral \
+            -Pversion=$RELEASE_VERSION --no-daemon
 
-      - name: Compute archive checksums
-        run: |
-          cd backgrounder/build/XCFrameworks/release
-          shasum -a 256 Backgrounder-*.xcframework.zip > SHA256SUMS.txt
-          cat SHA256SUMS.txt
-
-      - name: Create and push tag
+      - name: Publish to Maven Central (release — IRREVERSIBLE)
+        if: ${{ !inputs.dryRun }}
         env:
-          TAG: ${{ env.TAG }}
+          ORG_GRADLE_PROJECT_mavenCentralUsername:       ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword:       ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey:         ${{ secrets.MAVEN_CENTRAL_SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.MAVEN_CENTRAL_SIGNING_KEY_PASSWORD }}
+        run: |
+          ./gradlew publishAndReleaseToMavenCentral \
+            -Pversion=$RELEASE_VERSION --no-daemon
+
+      # Only tag + create a GitHub Release on a real publish, not a dry run.
+      # The tag must point at the commit that produced the published artifact,
+      # so this step runs *after* the Maven Central publish succeeds. If
+      # publish fails the job aborts before we get here; no orphan tag is
+      # created.
+      #
+      # `gh release create --generate-notes` uses GitHub's auto-generated
+      # release notes (commits since the previous tag, grouped). The shields.io
+      # `Release` badge on the README points at /releases/latest and updates
+      # within seconds of this step finishing.
+      - name: Tag and create GitHub Release
+        if: ${{ !inputs.dryRun }}
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
-          if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "Tag $TAG already exists locally."
+
+          if git rev-parse "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Tag $RELEASE_TAG already exists locally; skipping creation."
           else
-            git tag -a "$TAG" -m "Release $TAG"
-          fi
-          if git ls-remote --tags origin "$TAG" | grep -q "refs/tags/$TAG$"; then
-            echo "Tag $TAG already exists on origin."
-          else
-            git push origin "$TAG"
+            git tag -a "$RELEASE_TAG" -m "Release $RELEASE_TAG"
+            git push origin "$RELEASE_TAG"
           fi
 
-      - name: Upload workflow artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: backgrounder-release-${{ env.TAG }}
-          path: |
-            backgrounder/build/XCFrameworks/release/Backgrounder-*.xcframework.zip
-            backgrounder/build/XCFrameworks/release/SHA256SUMS.txt
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists; skipping creation."
+          else
+            gh release create "$RELEASE_TAG" \
+              --title "$RELEASE_TAG" \
+              --generate-notes \
+              --verify-tag
+          fi
 
-      - name: Publish GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ env.TAG }}
-          NOTES: ${{ inputs.notes }}
+      - name: Summary
         run: |
-          ASSETS=(backgrounder/build/XCFrameworks/release/Backgrounder-*.xcframework.zip
-                  backgrounder/build/XCFrameworks/release/SHA256SUMS.txt)
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "${ASSETS[@]}" --clobber
-          elif [[ -n "$NOTES" ]]; then
-            gh release create "$TAG" "${ASSETS[@]}" --title "$TAG" --notes "$NOTES"
+          if [[ "${{ inputs.dryRun }}" == "true" ]]; then
+            echo "Dry run complete. Review the staged deployment at:"
+            echo "   https://central.sonatype.com/publishing/deployments"
+            echo "   Click 'Publish' to release $RELEASE_VERSION, or 'Drop' to discard."
           else
-            gh release create "$TAG" "${ASSETS[@]}" --title "$TAG" --generate-notes
+            echo "Released com.happycodelucky.backgrounder:backgrounder:$RELEASE_VERSION to Maven Central."
+            echo "   Maven Central: https://central.sonatype.com/artifact/com.happycodelucky.backgrounder/backgrounder/$RELEASE_VERSION"
+            echo "   GitHub Release: https://github.com/happycodelucky/backgrounder/releases/tag/$RELEASE_TAG"
+            echo "   Note: Maven Central indexing can take up to ~30 min to appear in https://repo1.maven.org/maven2/."
           fi

@@ -12,6 +12,7 @@ plugins {
     alias(libs.plugins.android.kotlin.multiplatform.library) apply false
     alias(libs.plugins.skie) apply false
     alias(libs.plugins.ktlint) apply false
+    alias(libs.plugins.maven.publish) apply false
     // KSP is not used in v1 (no Koin Annotations, no codegen). Add when needed.
 
     // Dokka v2: Kotlin API doc generator. Produces HTML for the public API of
