@@ -128,6 +128,10 @@ kotlin {
             implementation(libs.turbine)
             implementation(libs.multiplatform.settings.test)
             implementation(libs.kermit.test)
+            // Upstream-blessed FakeReachability + withFakeReachability install
+            // helper. Replaces our hand-rolled commonTest fake; tests interact
+            // with `Reachability.shared` directly via the install/uninstall hook.
+            implementation(libs.reachable.testing)
         }
 
         androidMain.dependencies {

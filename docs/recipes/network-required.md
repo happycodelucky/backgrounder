@@ -54,22 +54,28 @@ On Android, `Unmetered` translates to `NetworkType.UNMETERED` in WorkManager's n
 
 ## Testing
 
-For pure-logic tests of code that depends on the gate, inject a `FakeReachability` via the parameterised builder overload:
+The library reads `Reachability.shared` directly — there is no Backgrounder-side test seam. Tests use the `com.happycodelucky.reachable:reachable-testing` artifact's `withFakeReachability { … }` helper, which temporarily installs a `FakeReachability` as `Reachability.shared` for the duration of the block:
 
 ```kotlin
-// commonTest — uses the shared FakeReachability helper.
-val fake = FakeReachability.offline()
-val backgrounder = Backgrounder.create(
-    tickIdentifier = "com.example.app.tick",
-    eventListener = events,
-    reachability = fake,
-)
+// commonTest — depends on libs.reachable.testing.
+@Test fun retriesWhenOffline() = runTest {
+    withFakeReachability(initial = ReachabilityStatus.Unknown) { fake ->
+        val backgrounder = Backgrounder.create(
+            tickIdentifier = "com.example.app.tick",
+            eventListener = events,
+        )
 
-// Drive transitions deterministically:
-fake.emitOnline(transport = Transport.Wifi, metering = Metering.Unmetered)
+        // Drive transitions deterministically — `emit(...)`, `setReachable(...)`,
+        // `setTransport(...)`, `setMetering(...)` are all on the upstream FakeReachability.
+        fake.emit(ReachabilityStatus(reachable = true, transport = Transport.Wifi, metering = Metering.Unmetered))
+        // ...
+    }
+}
 ```
 
-The `reachability` parameter is `@HiddenFromObjC` — it's a Kotlin-side test seam, not part of the Swift surface. Production iOS / macOS apps call the parameter-less overload, which uses `Reachability.shared` internally.
+`withFakeReachability` restores the previous override (typically the production singleton) on exit, even on exception. Nested calls are LIFO-safe by construction. See the [reachable-testing module](https://github.com/happycodelucky/reachable/tree/main/reachable-testing) for the full driver API (`setReachable`, `setTransport`, `setMetering`, `reset`, `closeCallCount`, `wasClosed`).
+
+Backgrounder's public `Backgrounder.create(...)` factory has no `reachability:` parameter on either platform — the install hook is the *only* path. This keeps the Swift surface clean (no reachable types leak into Backgrounder's framework) and matches how every other consumer of `Reachability.shared` is tested.
 
 ## Common pitfalls
 

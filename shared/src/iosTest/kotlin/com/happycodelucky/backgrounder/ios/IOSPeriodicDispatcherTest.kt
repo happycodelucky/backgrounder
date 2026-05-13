@@ -3,7 +3,6 @@ package com.happycodelucky.backgrounder.ios
 import com.happycodelucky.backgrounder.BackgroundWorker
 import com.happycodelucky.backgrounder.BackgrounderEventListener
 import com.happycodelucky.backgrounder.EphemeralRegistry
-import com.happycodelucky.backgrounder.FakeReachability
 import com.happycodelucky.backgrounder.NetworkRequirement
 import com.happycodelucky.backgrounder.PlatformCapabilities
 import com.happycodelucky.backgrounder.ReachabilityGate
@@ -12,6 +11,10 @@ import com.happycodelucky.backgrounder.WorkInput
 import com.happycodelucky.backgrounder.WorkResult
 import com.happycodelucky.backgrounder.WorkerContext
 import com.happycodelucky.backgrounder.WorkerRegistry
+import com.happycodelucky.reachable.Metering
+import com.happycodelucky.reachable.ReachabilityStatus
+import com.happycodelucky.reachable.Transport
+import com.happycodelucky.reachable.testing.FakeReachability
 import com.russhwolf.settings.MapSettings
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CompletableDeferred
@@ -87,7 +90,12 @@ class IOSPeriodicDispatcherTest {
         // behaviour. The gate sits in front of `worker.execute(ctx)` and these
         // tests assert against execute being called, so a fake stuck at
         // reachable=true keeps the dispatcher's behaviour identical.
-        val gate = ReachabilityGate(FakeReachability.online())
+        val gate =
+            ReachabilityGate(
+                FakeReachability(
+                    ReachabilityStatus(reachable = true, transport = Transport.Wifi, metering = Metering.Unmetered),
+                ),
+            )
         val dispatcher =
             IOSPeriodicDispatcher(
                 state = store,

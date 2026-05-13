@@ -31,22 +31,22 @@ import platform.Foundation.NSUserDefaults
  * `shutdown()` cancels the scheduler's [kotlinx.coroutines.SupervisorJob]-rooted scope.
  */
 internal object MacOSBackgrounderBuilder {
-    fun build(
-        eventListener: BackgrounderEventListener,
-        reachability: Reachability = Reachability.shared,
-    ): Backgrounder {
+    fun build(eventListener: BackgrounderEventListener): Backgrounder {
         val settings = NSUserDefaultsSettings(NSUserDefaults(suiteName = "com.happycodelucky.backgrounder.shared"))
         val ephemeral = EphemeralRegistry(settings)
         val registry = WorkerRegistry()
 
-        // Pre-execution network gate. Driven by Reachability.shared (default)
-        // or a user-supplied instance (tests). Warm up the platform observer
-        // now by reading isReachable once — Reachability.shared lazily
-        // constructs its nw_path_monitor on first access (cold-read cost
-        // ~10–100ms on Apple); forcing it here keeps the first scheduled
-        // worker out of the cold path.
-        val gate = ReachabilityGate(reachability)
-        reachability.isReachable // discarded — read is the warmup side-effect
+        // Pre-execution network gate. Driven by `Reachability.shared` —
+        // process-lifetime singleton. Tests override the singleton via
+        // the `:reachable-testing` artifact's `withFakeReachability { }`
+        // install hook; no Backgrounder-side parameter is needed.
+        //
+        // Warm up the platform observer now by reading isReachable once —
+        // Reachability.shared lazily constructs its nw_path_monitor on
+        // first access (cold-read cost ~10–100ms on Apple); forcing it
+        // here keeps the first scheduled worker out of the cold path.
+        val gate = ReachabilityGate(Reachability.shared)
+        Reachability.shared.isReachable // discarded — read is the warmup side-effect
 
         val scheduler =
             NSBackgroundActivityBackedScheduler(

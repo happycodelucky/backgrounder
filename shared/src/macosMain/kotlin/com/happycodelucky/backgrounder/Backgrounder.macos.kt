@@ -1,10 +1,7 @@
 package com.happycodelucky.backgrounder
 
 import com.happycodelucky.backgrounder.macos.MacOSBackgrounderBuilder
-import com.happycodelucky.reachable.Reachability
 import kotlin.experimental.ExperimentalObjCName
-import kotlin.experimental.ExperimentalObjCRefinement
-import kotlin.native.HiddenFromObjC
 import kotlin.native.ObjCName
 
 /**
@@ -29,27 +26,15 @@ import kotlin.native.ObjCName
  * Call [Backgrounder.shutdown] from `applicationWillTerminate` to
  * cancel the scheduler's coroutine scope cleanly.
  *
+ * The pre-execution `WorkConstraints.networkRequired` gate reads from
+ * `Reachability.shared` (process-lifetime singleton). Tests install a
+ * `FakeReachability` via the `:reachable-testing` artifact's
+ * `withFakeReachability { … }` helper.
+ *
  * `@OptIn(ExperimentalObjCName::class)`: required by SKIE for the
  * Swift-rename annotation. Stable in practice.
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName(swiftName = "create")
 public fun Backgrounder.Companion.create(eventListener: BackgrounderEventListener = BackgrounderEventListener.Noop): Backgrounder =
-    MacOSBackgrounderBuilder.build(eventListener, Reachability.shared)
-
-/**
- * Test / Kotlin-only overload that takes an explicit [Reachability] instance.
- *
- * Hidden from the Swift / Obj-C surface via `@HiddenFromObjC` — see the same
- * annotation on the iOS counterpart (`Backgrounder.ios.kt`) for the rationale.
- *
- * @param reachability the [Reachability] instance the pre-execution network
- *   gate consults to honour `WorkConstraints.networkRequired`. Override with
- *   a fake in tests; production should use the parameter-less overload.
- */
-@OptIn(ExperimentalObjCName::class, ExperimentalObjCRefinement::class)
-@HiddenFromObjC
-public fun Backgrounder.Companion.create(
-    eventListener: BackgrounderEventListener = BackgrounderEventListener.Noop,
-    reachability: Reachability,
-): Backgrounder = MacOSBackgrounderBuilder.build(eventListener, reachability)
+    MacOSBackgrounderBuilder.build(eventListener)

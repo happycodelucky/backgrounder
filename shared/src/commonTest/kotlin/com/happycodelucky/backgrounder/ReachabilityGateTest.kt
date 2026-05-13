@@ -3,11 +3,12 @@ package com.happycodelucky.backgrounder
 import com.happycodelucky.reachable.Metering
 import com.happycodelucky.reachable.ReachabilityStatus
 import com.happycodelucky.reachable.Transport
+import com.happycodelucky.reachable.testing.FakeReachability
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
@@ -19,6 +20,24 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.async as coroutinesAsync
+
+// --- Small file-local helpers around the upstream FakeReachability API.
+//
+// `:reachable-testing` exposes a constructor `FakeReachability(initial: ReachabilityStatus)`
+// plus per-axis setters. These two helpers keep the gate test's call sites
+// matching the shape we used pre-0.11.10 (`offline()` / `online(transport, metering)`)
+// without re-introducing the hand-rolled fake. Drop these if more sites
+// need them; promote into a shared test helper.
+
+private fun fakeOffline(): FakeReachability = FakeReachability()
+
+private fun fakeOnline(
+    transport: Transport = Transport.Wifi,
+    metering: Metering = Metering.Unmetered,
+): FakeReachability =
+    FakeReachability(
+        ReachabilityStatus(reachable = true, transport = transport, metering = metering),
+    )
 
 /**
  * Pure-logic tests for [ReachabilityGate].
@@ -42,7 +61,7 @@ class ReachabilityGateTest {
             // Even with an offline fake, NetworkRequirement.None must short-circuit
             // without observing reachability. This is the zero-allocation hot path
             // for workers that don't need a network at all.
-            val reachability = FakeReachability.offline()
+            val reachability = fakeOffline()
             val gate = ReachabilityGate(reachability)
             val result = gate.awaitReachable(NetworkRequirement.None, generousBudget)
             assertIs<ReachabilityGate.GateResult.NotRequired>(result)
@@ -51,7 +70,7 @@ class ReachabilityGateTest {
     @Test
     fun alreadyReachableReturnsMetWithoutWaiting() =
         runTest {
-            val reachability = FakeReachability.online()
+            val reachability = fakeOnline()
             val gate = ReachabilityGate(reachability)
             val before = currentTime
             val result = gate.awaitReachable(NetworkRequirement.Any, generousBudget)
@@ -62,7 +81,7 @@ class ReachabilityGateTest {
     @Test
     fun becomesReachableMidWaitReturnsMet() =
         runTest {
-            val reachability = FakeReachability.offline()
+            val reachability = fakeOffline()
             val gate = ReachabilityGate(reachability)
             val deferredResult =
                 asyncUnconfined { gate.awaitReachable(NetworkRequirement.Any, generousBudget) }
@@ -71,7 +90,9 @@ class ReachabilityGateTest {
             // Virtual time advance is needed so withTimeoutOrNull's clock progresses
             // and the flow's collector is registered before we emit.
             advanceTimeBy(100.milliseconds)
-            reachability.emitOnline()
+            reachability.emit(
+                ReachabilityStatus(reachable = true, transport = Transport.Wifi, metering = Metering.Unmetered),
+            )
             val result = deferredResult.await()
             assertIs<ReachabilityGate.GateResult.Met>(result)
             // Strictly less than the 5-second cap — we emitted long before timeout.
@@ -84,7 +105,7 @@ class ReachabilityGateTest {
     @Test
     fun staysOfflineThroughBudgetReturnsTimedOut() =
         runTest {
-            val reachability = FakeReachability.offline()
+            val reachability = fakeOffline()
             val gate = ReachabilityGate(reachability)
             val result = gate.awaitReachable(NetworkRequirement.Any, generousBudget)
             assertIs<ReachabilityGate.GateResult.TimedOut>(result)
@@ -103,7 +124,7 @@ class ReachabilityGateTest {
             // Start offline; transition to Metered cellular; then to Unmetered wifi.
             // Gate must only resolve at the Unmetered transition — Metered should
             // *not* satisfy NetworkRequirement.Unmetered.
-            val reachability = FakeReachability.offline()
+            val reachability = fakeOffline()
             val gate = ReachabilityGate(reachability)
             val deferred =
                 asyncUnconfined { gate.awaitReachable(NetworkRequirement.Unmetered, generousBudget) }
@@ -121,7 +142,9 @@ class ReachabilityGateTest {
             )
 
             // Now flip to Wi-Fi (Unmetered).
-            reachability.emitOnline(transport = Transport.Wifi, metering = Metering.Unmetered)
+            reachability.emit(
+                ReachabilityStatus(reachable = true, transport = Transport.Wifi, metering = Metering.Unmetered),
+            )
             val result = deferred.await()
             assertIs<ReachabilityGate.GateResult.Met>(result)
         }
@@ -131,7 +154,7 @@ class ReachabilityGateTest {
         runTest {
             // budget = 8s → budget/4 = 2s, which is < MAX_WAIT (5s). The gate
             // should time out at the smaller value, not the cap.
-            val reachability = FakeReachability.offline()
+            val reachability = fakeOffline()
             val gate = ReachabilityGate(reachability)
             val budget = 8.seconds
             val result = gate.awaitReachable(NetworkRequirement.Any, budget)
@@ -149,7 +172,7 @@ class ReachabilityGateTest {
             // The gate respects upstream coroutine cancellation — the caller's
             // scope owns lifecycle, not the gate. Tests cancellation by launching
             // the gate on a child scope and cancelling that scope.
-            val reachability = FakeReachability.offline()
+            val reachability = fakeOffline()
             val gate = ReachabilityGate(reachability)
             val parentScope = CoroutineScope(coroutineContext + SupervisorJob())
             val job =
