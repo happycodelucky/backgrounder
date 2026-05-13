@@ -1,7 +1,7 @@
 @file:Suppress("UnstableApiUsage")
 
 /*
- * Backgrounder — :shared module.
+ * Backgrounder — :backgrounder module.
  *
  * Headless KMP module: business logic only, no UI dependencies (CLAUDE.md §1, §7).
  * Targets are ARM-only per CLAUDE.md §1: iosArm64, iosSimulatorArm64, Android

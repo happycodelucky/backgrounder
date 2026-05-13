@@ -1,7 +1,7 @@
 /*
  * Backgrounder — root build script.
  *
- * Plugins are declared here with `apply false`; they're applied in :shared.
+ * Plugins are declared here with `apply false`; they're applied in :backgrounder.
  * This keeps `gradle/libs.versions.toml` as the single source of truth for
  * versions (CLAUDE.md §10).
  */
@@ -55,14 +55,14 @@ subprojects {
     }
 }
 
-// Apply Dokka to the :shared module and aggregate into docs/api/.
+// Apply Dokka to the :backgrounder module and aggregate into docs/api/.
 dokka {
     moduleName.set("Backgrounder")
 }
 
 dependencies {
-    // Aggregate Dokka HTML from :shared into the root build (Dokka v2 pattern).
-    dokka(project(":shared"))
+    // Aggregate Dokka HTML from :backgrounder into the root build (Dokka v2 pattern).
+    dokka(project(":backgrounder"))
 }
 
 /**

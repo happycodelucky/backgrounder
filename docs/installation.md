@@ -25,7 +25,7 @@ If your app is itself a Kotlin Multiplatform project, depend on the `shared` art
     backgrounder = "0.1.0"
 
     [libraries]
-    backgrounder-shared = { module = "com.happycodelucky.backgrounder:shared", version.ref = "backgrounder" }
+    backgrounder = { module = "com.happycodelucky.backgrounder:backgrounder", version.ref = "backgrounder" }
     ```
 
 === "Kotlin DSL (`build.gradle.kts`)"
@@ -34,7 +34,7 @@ If your app is itself a Kotlin Multiplatform project, depend on the `shared` art
     kotlin {
         sourceSets {
             commonMain.dependencies {
-                implementation(libs.backgrounder.shared)
+                implementation(libs.backgrounder)
             }
         }
     }
@@ -96,8 +96,8 @@ When developing against an unpublished version of Backgrounder, point your iOS a
 
 ```bash
 # In the Backgrounder repo:
-./gradlew :shared:assembleBackgrounderXCFramework
-# → shared/build/XCFrameworks/release/Backgrounder.xcframework
+./gradlew :backgrounder:assembleBackgrounderXCFramework
+# → backgrounder/build/XCFrameworks/release/Backgrounder.xcframework
 
 # In your iOS app's Package.swift, replace the remote URL with:
 .package(path: "../backgrounder")

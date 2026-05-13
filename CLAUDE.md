@@ -83,13 +83,13 @@ Everything else we author — classes, files, top-level functions, top-level `va
 ## 4. Module layout
 
 ```
-/shared               headless KMP module — business logic only
-  /src/commonMain
-  /src/androidMain
+/backgrounder         headless KMP module — business logic only.
+  /src/commonMain     Directory + Gradle module name + Maven artifact id all
+  /src/androidMain    match (`com.happycodelucky.backgrounder:backgrounder`).
   /src/iosMain
   /src/macosMain
   /src/wasmJsMain     stretch
-/iOSApp               Xcode project, native SwiftUI, consumes /shared via SPM
+/iOSApp               Xcode project, native SwiftUI, consumes /backgrounder via SPM
 /androidApp           Android entrypoint, native Jetpack Compose UI
 /macOSApp             macOS desktop, native SwiftUI/AppKit
 /webApp               native web (stretch)
@@ -126,7 +126,7 @@ A "Kotlin-first" library is written in Kotlin, designed for KMP, idiomatic (susp
 | Testing | **kotlin.test** + **Turbine** + **kotlinx.coroutines.test** |
 | Property tests | **Kotest** (when invariants are clear) |
 
-**DI is a user choice.** Library code in `:shared` uses constructor injection — no `Module`, no service locator, no top-level `KoinPlatform.getKoin()` reads. The consumer's app graph is what wires the library's public types together. Koin is recommended for the consumer's own graph; alternatives (Hilt on Android, kotlin-inject, hand-wired) are equally supported. The library *itself* must not introduce a runtime dependency on a DI container.
+**DI is a user choice.** Library code in `:backgrounder` uses constructor injection — no `Module`, no service locator, no top-level `KoinPlatform.getKoin()` reads. The consumer's app graph is what wires the library's public types together. Koin is recommended for the consumer's own graph; alternatives (Hilt on Android, kotlin-inject, hand-wired) are equally supported. The library *itself* must not introduce a runtime dependency on a DI container.
 
 ### Step 2 — KMP-capable third-party
 
@@ -181,7 +181,7 @@ UI lives in the platform apps. The shared module exposes:
 
 iOS UI: SwiftUI. Android UI: Jetpack Compose. macOS desktop UI: SwiftUI/AppKit. Web UI: platform-appropriate.
 
-The shared module **never** depends on a UI framework. No `androidx.compose.*` in `commonMain` or any source set inside `/shared`.
+The shared module **never** depends on a UI framework. No `androidx.compose.*` in `commonMain` or any source set inside `/backgrounder`.
 
 ---
 
@@ -277,9 +277,9 @@ suspend fun fetchUser(id: String): FetchUserOutcome
 
 **Templates already in this repo.** Mirror their shape:
 
-- `shared/src/commonMain/kotlin/com/happycodelucky/backgrounder/WorkResult.kt`
-- `shared/src/commonMain/kotlin/com/happycodelucky/backgrounder/ScheduleOutcome.kt`
-- `shared/src/commonMain/kotlin/com/happycodelucky/backgrounder/CancelOutcome.kt`
+- `backgrounder/src/commonMain/kotlin/com/happycodelucky/backgrounder/WorkResult.kt`
+- `backgrounder/src/commonMain/kotlin/com/happycodelucky/backgrounder/ScheduleOutcome.kt`
+- `backgrounder/src/commonMain/kotlin/com/happycodelucky/backgrounder/CancelOutcome.kt`
 
 **Internal use of `runCatching` is fine.** This rule is about return types crossing the Swift boundary. `runCatching { ... }.getOrElse { ... }` inside an `internal` function — to swallow-on-purpose, log, or fold into a sealed outcome before returning — does not violate it. The line is drawn at `public` visibility on `commonMain` / `appleMain` / `iosMain` / `macosMain` declarations.
 
@@ -317,7 +317,7 @@ We use **Touchlab's KMMBridge** to publish the iOS framework. **CocoaPods is for
 - Don't vendor `XCFramework` zips into the iOS repo. Everything flows through Maven + SPM.
 - `Package.swift` is generated. Don't hand-edit.
 
-**Local development override:** the iOS app supports a local SPM path pointing at the Gradle build output. Run `./gradlew :shared:assembleXCFramework`, then Xcode picks up changes without a publish step. The path override is documented in `iOSApp/README.md`.
+**Local development override:** the iOS app supports a local SPM path pointing at the Gradle build output. Run `./gradlew :backgrounder:assembleXCFramework`, then Xcode picks up changes without a publish step. The path override is documented in `iOSApp/README.md`.
 
 ---
 
@@ -347,7 +347,7 @@ When starting any task:
 3. Need platform-specific behavior? Walk Section 5 in order. Don't skip to `expect`/`actual`.
 4. Considering a hand-written replacement? Section 6 process. Default answer is "use the library."
 5. Adding a public API consumed from Swift? Apply Section 8 rules at design time, not after.
-6. Done means: `./gradlew check` passes and `./gradlew :shared:linkDebugFrameworkIosArm64` builds clean.
+6. Done means: `./gradlew check` passes and `./gradlew :backgrounder:linkDebugFrameworkIosArm64` builds clean.
 7. Opting into experimental APIs? One-line comment explaining what's experimental and the rollback path.
 8. Wasm gap? `// TODO(wasm)` and ship Tier 1.
 
@@ -365,6 +365,6 @@ When starting any task:
 - No suspend calls inside a `kotlinx.atomicfu.locks.synchronized` block.
 - No EAP/RC/beta on `main`.
 - No callback-based public APIs in `commonMain`.
-- No UI dependencies in `/shared`.
+- No UI dependencies in `/backgrounder`.
 - No hand-edited `Package.swift`.
 - No vendored `XCFramework` in the iOS repo.

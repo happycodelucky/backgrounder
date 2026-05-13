@@ -12,8 +12,8 @@ Open an issue on [GitHub](https://github.com/happycodelucky/backgrounder/issues)
 
 ```bash
 ./gradlew check                                  # all unit tests
-./gradlew :shared:linkDebugFrameworkIosArm64     # iOS device framework
-./gradlew :shared:assembleBackgrounderXCFramework # KMMBridge artifact
+./gradlew :backgrounder:linkDebugFrameworkIosArm64     # iOS device framework
+./gradlew :backgrounder:assembleBackgrounderXCFramework # KMMBridge artifact
 ```
 
 The repo follows the conventions in `CLAUDE.md`:

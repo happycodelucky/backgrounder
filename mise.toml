@@ -1,8 +1,21 @@
-[tools]
-gradle = "9.4.1"
-
-# ────────────────────────────────────────────────────────────────────────────
-# Mise tasks for the Backgrounder KMP library.
+# mise — toolchain pins and task surface for the Backgrounder KMP repo.
+# Run `mise install` to provision tools; `mise tasks` to list runnable tasks.
+#
+# Keep this file in sync with:
+#   gradle/libs.versions.toml                 (Kotlin, AGP, SKIE pins)
+#   gradle/wrapper/gradle-wrapper.properties  (distributionUrl)
+#
+# Single source of truth for non-Gradle build deps. Versions for Kotlin,
+# AGP, SKIE, KMMBridge, ktlint-gradle, etc. live in gradle/libs.versions.toml
+# (CLAUDE.md §2, §10) — mise must not duplicate them.
+#
+# Bootstrap on a fresh machine:
+#   brew install mise
+#   mise trust
+#   mise install
+#
+# Xcode is NOT managed by mise. Install the latest stable Xcode that SKIE
+# supports; CLAUDE.md §2 records the floor.
 #
 # Quick reference:
 #   mise run build       — assemble all production targets (fast)
@@ -11,63 +24,80 @@ gradle = "9.4.1"
 #   mise run framework   — link iOS arm64 debug framework with SKIE
 #   mise run xcframework — release XCFramework (KMMBridge artifact)
 #   mise run ci          — exact CI sequence locally
+#   mise run docs:serve  — local mkdocs preview at http://localhost:8000
 #   mise run format      — auto-fix ktlint findings
 #   mise run clean       — gradle clean
 #
 # Conventions:
 # - Task naming uses `domain:action`, colon-separated, lowercase. Hyphens are
-#   reserved for word separation *inside* a single segment (none today). The
-#   colons let mise group related tasks in `mise tasks` output.
+#   reserved for word separation *inside* a single segment (none today).
+# - All tasks scope to `:backgrounder` — the only module in the repo today.
+#   (Renamed from `:shared`; the directory and Gradle module name now match
+#   the published Maven artifact id `com.happycodelucky.backgrounder:backgrounder`.)
 # - Tests on each target run independently. The "fast" macOS path covers
 #   commonTest and is the right inner loop. iOS simulator tests are slower
 #   (boot a simulator per task) and live under `test:apple`.
 # - `check` mirrors CI: ktlint + every unit test target (commonTest +
 #   iosSimulatorArm64Test + macosArm64Test + androidHostTest).
-# - All tasks scope to `:shared` — the only module in the repo today.
-# ────────────────────────────────────────────────────────────────────────────
+# - Lowercase ios/macos in task names is fine — these are CLI tokens, not
+#   source-identifier symbols. The Apple-casing rule (CLAUDE.md §3) still
+#   applies to file names, types, and comments below.
+
+[tools]
+java   = "temurin-21.0.11+10.0.LTS"   # CLAUDE.md §2 — JDK 21 LTS, Apple Silicon aarch64.
+gradle = "9.4.1"                       # Matches gradle/wrapper/gradle-wrapper.properties.
+python = "3.12.13"                     # docs/requirements.txt mkdocs toolchain.
+gh     = "2.92.0"                      # release.yml uses `gh release create`.
+
+# Deliberately NOT pinned here:
+#   - kotlin: gradle/libs.versions.toml owns it (CLAUDE.md §2).
+#   - cocoapods: forbidden (CLAUDE.md §9, §13).
+#   - node: not used in this repo.
+#   - xcodegen/swiftlint/swiftformat: no sample iOSApp/macOSApp yet. Add when
+#     the platform apps land (mirror reachable's mise.toml at that point).
 
 # ── Build ──────────────────────────────────────────────────────────────────
 
 [tasks.build]
 description = "Assemble all production targets (Android + iOS arm64 + iOS sim arm64 + macOS arm64)"
-run = "./gradlew :shared:assemble"
+run = "./gradlew :backgrounder:assemble"
 
 [tasks."build:ios"]
 description = "Link the iOS arm64 debug framework slices (device + Apple Silicon simulator)"
 run = """
-./gradlew :shared:linkDebugFrameworkIosArm64 \
-          :shared:linkDebugFrameworkIosSimulatorArm64
+./gradlew :backgrounder:linkDebugFrameworkIosArm64 \
+          :backgrounder:linkDebugFrameworkIosSimulatorArm64
 """
 
 [tasks."build:macos"]
 description = "Link the debug macOS framework slice (Apple Silicon)"
-run = "./gradlew :shared:linkDebugFrameworkMacosArm64"
+run = "./gradlew :backgrounder:linkDebugFrameworkMacosArm64"
 
 [tasks."build:android"]
 description = "Assemble the Android AAR"
-run = "./gradlew :shared:assemble"
+run = "./gradlew :backgrounder:assemble"
 
 [tasks.framework]
 description = "Link the iOS arm64 debug framework with SKIE — fast iOS smoke test (alias of build:ios for the device slice only)"
-run = "./gradlew :shared:linkDebugFrameworkIosArm64"
+run = "./gradlew :backgrounder:linkDebugFrameworkIosArm64"
 
 [tasks.xcframework]
 description = "Build the release XCFramework (KMMBridge artifact, CLAUDE.md §9)"
-run = "./gradlew :shared:assembleBackgrounderXCFramework"
+run = "./gradlew :backgrounder:assembleBackgrounderXCFramework"
 
 # ── Test ───────────────────────────────────────────────────────────────────
 
 [tasks.test]
 description = "Fast inner-loop tests — macOS arm64 only (covers commonTest)"
-run = "./gradlew :shared:macosArm64Test"
+run = "./gradlew :backgrounder:macosArm64Test"
 
 [tasks."test:android"]
 description = "Android host unit tests"
-run = "./gradlew :shared:testAndroidHostTest"
+run = "./gradlew :backgrounder:testAndroidHostTest"
 
 [tasks."test:ios"]
 description = "iOS simulator arm64 tests (slower — boots a simulator)"
-run = "./gradlew :shared:iosSimulatorArm64Test"
+run = "./gradlew :backgrounder:iosSimulatorArm64Test"
 
 [tasks."test:apple"]
 description = "Both Apple test targets (macOS arm64 + iOS simulator arm64)"
@@ -81,22 +111,53 @@ depends = ["test", "test:ios", "test:android"]
 
 [tasks.lint]
 description = "ktlint check (no tests)"
-run = "./gradlew :shared:ktlintCheck"
+run = "./gradlew :backgrounder:ktlintCheck"
 
 [tasks.format]
 description = "Auto-fix ktlint findings where possible"
-run = "./gradlew :shared:ktlintFormat"
+run = "./gradlew :backgrounder:ktlintFormat"
+
+# ── Docs ───────────────────────────────────────────────────────────────────
+# mkdocs site lives under /docs; Dokka HTML for the public API is mirrored
+# into docs/api/ by the root `copyDokkaToDocs` task. CI's docs.yml runs
+# `docs:install` → `docs:dokka` → `docs:check` → `docs:build:only`.
+
+[tasks."docs:install"]
+description = "Install the pinned mkdocs toolchain into the active python."
+run = "pip install -r docs/requirements.txt"
+
+[tasks."docs:dokka"]
+description = "Generate Dokka HTML and mirror it into docs/api/."
+run = "./gradlew copyDokkaToDocs"
+
+[tasks."docs:check"]
+description = "Validate docs structure (nav coverage, recipes have code)."
+run = "python3 docs/check.py"
+
+[tasks."docs:serve"]
+description = "Local mkdocs preview at http://localhost:8000."
+depends = ["docs:dokka"]
+run = "mkdocs serve"
+
+[tasks."docs:build"]
+description = "Strict mkdocs build — what CI runs."
+depends = ["docs:dokka", "docs:check"]
+run = "mkdocs build --strict"
+
+[tasks."docs:build:only"]
+description = "Strict mkdocs build, assuming docs:dokka + docs:check already ran (CI uses this)."
+run = "mkdocs build --strict"
 
 # ── Aggregates ─────────────────────────────────────────────────────────────
 
 [tasks.check]
-description = "Full local check — exactly what CI's `:shared:check` runs (ktlint + every test target)"
-run = "./gradlew :shared:check"
+description = "Full local check — exactly what CI's `:backgrounder:check` runs (ktlint + every test target)"
+run = "./gradlew :backgrounder:check"
 
 [tasks.ci]
 description = "Run the exact CI sequence locally: check + xcframework"
-run = "./gradlew :shared:check :shared:assembleBackgrounderXCFramework"
+run = "./gradlew :backgrounder:check :backgrounder:assembleBackgrounderXCFramework"
 
 [tasks.clean]
 description = "Gradle clean"
-run = "./gradlew :shared:clean"
+run = "./gradlew :backgrounder:clean"

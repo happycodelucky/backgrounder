@@ -1,9 +1,15 @@
 /*
  * Backgrounder — KMP background work scheduling library.
  *
- * /shared is the only subproject in v1: the headless KMP module that contains
- * all business logic. Platform apps (androidApp, iOSApp, macOSApp) live outside
- * this Gradle build and consume /shared via KMMBridge → Maven → SPM (CLAUDE.md §9).
+ * /backgrounder is the only subproject in v1: the headless KMP module that
+ * contains all business logic. The directory name matches the Gradle module
+ * name and the published Maven artifact id (`com.happycodelucky.backgrounder:backgrounder`),
+ * mirroring the convention used by Ktor, kotlinx, and our sibling
+ * `com.happycodelucky.reachable:reachable` library — the redundant ":shared"
+ * coordinate would only add noise once published.
+ *
+ * Platform apps (androidApp, iOSApp, macOSApp) live outside this Gradle build
+ * and consume /backgrounder via KMMBridge → Maven → SPM (CLAUDE.md §9).
  */
 
 @file:Suppress("UnstableApiUsage")
@@ -39,4 +45,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "backgrounder"
 
-include(":shared")
+include(":backgrounder")

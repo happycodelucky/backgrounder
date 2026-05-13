@@ -6,7 +6,7 @@ There are three steps regardless of platform: *create*, *register*, *start*. The
 
 ## 1. Add Backgrounder to your build
 
-See [Installation](installation.md) for the version-catalog snippet and the platform-floor table. The short version is: add `com.happycodelucky.backgrounder:shared` to your `commonMain` dependencies.
+See [Installation](installation.md) for the version-catalog snippet and the platform-floor table. The short version is: add `com.happycodelucky.backgrounder:backgrounder` to your `commonMain` dependencies.
 
 ## 2. Define a `BackgroundWorker` in `commonMain`
 
