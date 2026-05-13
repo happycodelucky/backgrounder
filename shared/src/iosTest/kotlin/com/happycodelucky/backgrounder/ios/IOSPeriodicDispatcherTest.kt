@@ -11,7 +11,6 @@ import com.happycodelucky.backgrounder.WorkInput
 import com.happycodelucky.backgrounder.WorkResult
 import com.happycodelucky.backgrounder.WorkerContext
 import com.happycodelucky.backgrounder.WorkerRegistry
-import com.happycodelucky.reachable.Metering
 import com.happycodelucky.reachable.ReachabilityStatus
 import com.happycodelucky.reachable.Transport
 import com.happycodelucky.reachable.testing.FakeReachability
@@ -93,7 +92,7 @@ class IOSPeriodicDispatcherTest {
         val gate =
             ReachabilityGate(
                 FakeReachability(
-                    ReachabilityStatus(reachable = true, transport = Transport.Wifi, metering = Metering.Unmetered),
+                    ReachabilityStatus(isReachable = true, transport = Transport.Wifi, isDataMetered = false),
                 ),
             )
         val dispatcher =

@@ -1,6 +1,5 @@
 package com.happycodelucky.backgrounder
 
-import com.happycodelucky.reachable.Metering
 import com.happycodelucky.reachable.Reachability
 import com.happycodelucky.reachable.ReachabilityStatus
 import kotlinx.coroutines.flow.first
@@ -61,11 +60,12 @@ internal class ReachabilityGate(
      * touching the reachability flow — zero allocation on the hot path for
      * the common no-constraint case.
      *
-     * `NetworkRequirement.Unmetered` is honoured against [Metering.Unmetered]
-     * — wifi or ethernet only. An iPhone on cellular hotspot has
-     * `reachable = true, metering = Metered`; the `Unmetered` gate correctly
-     * keeps waiting in that case. This is a fidelity improvement over the
-     * legacy behaviour where iOS downgraded `Unmetered` to `Any`.
+     * `NetworkRequirement.Unmetered` is honoured against
+     * `ReachabilityStatus.isDataMetered == false` — wifi or ethernet only.
+     * An iPhone on cellular hotspot has `isReachable = true, isDataMetered = true`;
+     * the `Unmetered` gate correctly keeps waiting in that case. Fidelity
+     * improvement over the legacy iOS behaviour of downgrading `Unmetered`
+     * to `Any`.
      */
     suspend fun awaitReachable(
         requirement: NetworkRequirement,
@@ -85,11 +85,11 @@ internal class ReachabilityGate(
         requirement: NetworkRequirement,
         status: ReachabilityStatus,
     ): Boolean {
-        if (!status.reachable) return false
+        if (!status.isReachable) return false
         return when (requirement) {
             NetworkRequirement.None -> true
             NetworkRequirement.Any -> true
-            NetworkRequirement.Unmetered -> status.metering == Metering.Unmetered
+            NetworkRequirement.Unmetered -> !status.isDataMetered
         }
     }
 

@@ -53,4 +53,4 @@ if (!g.cancelsInFlight) {
 - **Android** — `WorkManager` refuses to dispatch the worker until the constraint is met. The OS holds it indefinitely.
 - **iOS / macOS** — a library-managed pre-execution gate, driven by [`reachable`](https://github.com/happycodelucky/reachable), waits up to `min(5 s, budget / 4)`. On timeout the worker is short-circuited to `WorkResult.Retry` and the scheduler reschedules per the request's `BackoffPolicy`.
 
-`NetworkRequirement.Unmetered` is honoured against `Metering.Unmetered` (wifi/ethernet) on all platforms — Android maps to `NetworkType.UNMETERED`; Apple checks the metering axis directly. The legacy "downgrade Unmetered to Any on iOS" behaviour is gone. See [Recipes → Require a network connection](../recipes/network-required.md).
+`NetworkRequirement.Unmetered` is honoured against `ReachabilityStatus.isDataMetered == false` (wifi/ethernet) on all platforms — Android maps to `NetworkType.UNMETERED`; Apple checks the metered axis directly. The legacy "downgrade Unmetered to Any on iOS" behaviour is gone. See [Recipes → Require a network connection](../recipes/network-required.md).
