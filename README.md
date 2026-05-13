@@ -226,8 +226,8 @@ On Android, the sweep is augmented by a per-instance ready gate: if WorkManager 
 
 ```bash
 ./gradlew check                                      # all unit tests across iOS sim, macOS native, Android JVM
-./gradlew :shared:linkDebugFrameworkIosArm64         # iOS device framework, SKIE-enhanced
-./gradlew :shared:assembleBackgrounderXCFramework    # the KMMBridge-consumable artifact
+./gradlew :backgrounder:linkDebugFrameworkIosArm64         # iOS device framework, SKIE-enhanced
+./gradlew :backgrounder:assembleBackgrounderXCFramework    # the KMMBridge-consumable artifact
 ```
 
 `./gradlew check` runs:
