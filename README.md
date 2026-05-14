@@ -10,6 +10,40 @@ Documentations can be found [here](https://happycodelucky.github.io/backgrounder
 
 ---
 
+## Installation
+
+Backgrounder publishes to Maven Central. From a Kotlin Multiplatform project,
+depend on the artifact from `commonMain` — KMP resolves the right per-target
+slice (Android AAR, `iosArm64`, `iosSimulatorArm64`, `macosArm64`) for you:
+
+```kotlin
+// shared/build.gradle.kts
+kotlin {
+    sourceSets {
+        commonMain.dependencies {
+            implementation("com.happycodelucky.backgrounder:backgrounder:0.9.0")
+        }
+    }
+}
+```
+
+Android-only consumers depend on the Android artifact directly:
+
+```kotlin
+// app/build.gradle.kts
+dependencies {
+    implementation("com.happycodelucky.backgrounder:backgrounder-android:0.9.0")
+}
+```
+
+Pure-Swift apps that don't use Kotlin Multiplatform aren't supported yet — a
+native Swift Package Manager distribution is on the roadmap. See the
+[Installation guide](https://happycodelucky.github.io/backgrounder/installation/)
+for platform floors, the Apple-side SPM roadmap, and the local-development
+override.
+
+---
+
 ## What you write
 
 ```kotlin

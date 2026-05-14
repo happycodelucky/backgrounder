@@ -28,7 +28,7 @@ Backgrounder is three layers, all in `/backgrounder`:
 └────────────────────┘ └──────────────────────┘ └────────────────────────┘
 ```
 
-Per CLAUDE.md §1: ARM-only targets — `iosArm64`, `iosSimulatorArm64`, Android `arm64-v8a`, `macosArm64`. No Catalyst, no x86, no watchOS, no tvOS.
+ARM-only targets — `iosArm64`, `iosSimulatorArm64`, Android `arm64-v8a`, `macosArm64`. No Catalyst, no x86, no watchOS, no tvOS.
 
 ## Two surfaces, one entry point
 
