@@ -334,7 +334,7 @@ Releases are triggered via `workflow_dispatch` on `.github/workflows/release.yml
 
 The `automaticRelease = false` flag in `backgrounder/build.gradle.kts` is what makes dry-run behaviour correct. Do not flip it without reading the comment there.
 
-**Secrets:** the four `MAVEN_CENTRAL_*` secrets live on the `continous-deloyment` GitHub environment (yes, the typo — it's the literal environment name; don't fix it without renaming the environment on both `backgrounder` and `reachable` in lockstep).
+**Secrets:** the four `MAVEN_CENTRAL_*` secrets live on the `continuous-deployment` GitHub environment, not the repository scope. The `release.yml` job binds to it via `environment: continuous-deployment`.
 
 ### Local SPM (sample apps inside this repo)
 
