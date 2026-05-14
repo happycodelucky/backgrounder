@@ -57,7 +57,7 @@ The library validates the tick identifier during `backgrounder.start()` (Kermit 
 
 The library has **two dispatch paths** on iOS, used in different parts of the app's lifecycle.
 
-**One-shot tasks** (`WorkRequest.OneTime`) flow through per-`TaskId` `BGTaskScheduler` registrations. iOS calls the registered launch handler when it decides to dispatch; the library bounces into a `SupervisorJob`-rooted `CoroutineScope` on `Dispatchers.Default` (CLAUDE.md §3 forbids `GlobalScope`; the scope is owned by the iOS coroutine bridge). `BGTask.expirationHandler` is wired to cancel the coroutine job; every `setTaskCompletedWithSuccess` call goes through a per-fire `CompletionGuard` so iOS's "completed twice" assertion can't trigger.
+**One-shot tasks** (`WorkRequest.OneTime`) flow through per-`TaskId` `BGTaskScheduler` registrations. iOS calls the registered launch handler when it decides to dispatch; the library bounces into a `SupervisorJob`-rooted `CoroutineScope` on `Dispatchers.Default` — never `GlobalScope`; the scope is owned by the iOS coroutine bridge with a defined cancellation lifecycle. `BGTask.expirationHandler` is wired to cancel the coroutine job; every `setTaskCompletedWithSuccess` call goes through a per-fire `CompletionGuard` so iOS's "completed twice" assertion can't trigger.
 
 **Periodic tasks** (`WorkRequest.Periodic`) flow through an in-process dispatcher with two feeds:
 

@@ -89,6 +89,12 @@ markdown_extensions:
 
 plugins:
   - search
+  # mkdocs-macros: lets markdown use {{ version }} placeholders that resolve
+  # at build time. `main.py` in the repo root computes `version` from the
+  # latest published GitHub release (or `main` in local dev), so version
+  # pins in install snippets stay in lockstep with the actual release.
+  - macros:
+      module_name: main
 
 extra:
   social:

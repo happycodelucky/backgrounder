@@ -2,12 +2,11 @@
 """
 Validate the docs/ tree for invariants `mkdocs build --strict` doesn't enforce.
 
-CLAUDE.md §10 / plan §"Documentation site → Verification". CI runs this after
-mkdocs build, so doc drift fails the build, not the user.
+CI runs this after the mkdocs build, so doc drift fails the build, not the user.
 
 Invariants:
   1. Every .md file under docs/ (except generated api/) is referenced from
-     mkdocs.yml's `nav:` tree.
+     the site navigation.
   2. Every recipe page has at least one fenced code block.
   3. Every platform page (except force-quit.md) has a tabbed launch-sequence
      block (=== "Android" / iOS / macOS).
@@ -38,9 +37,9 @@ def collect_md_files() -> set[Path]:
 
 
 def collect_nav_paths() -> set[Path]:
-    """Pull every doc path out of mkdocs.yml's nav tree.
+    """Pull every doc path out of the site navigation config.
 
-    We don't import a YAML library — mkdocs.yml uses tag directives
+    We don't import a YAML library — the config uses tag directives
     (`!!python/name:...`) that pyyaml's safe loader rejects. Instead we
     scan for any token that ends in `.md`; nav entries are the only place
     such tokens appear in the file.
@@ -58,7 +57,7 @@ def check_nav_coverage(failures: list[str]) -> None:
     missing = sorted(p.relative_to(DOCS_DIR) for p in on_disk - in_nav)
     if missing:
         for p in missing:
-            failures.append(f"page not referenced from mkdocs.yml nav: {p}")
+            failures.append(f"page not referenced from the site navigation: {p}")
 
 
 def check_recipes_have_fenced_block(failures: list[str]) -> None:

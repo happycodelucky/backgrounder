@@ -56,8 +56,16 @@ on:
 # `contents: write` lets the workflow push the version tag and create the
 # GitHub Release after a successful Maven Central publish. Tagging happens
 # only on `dryRun=false` — see "Tag + create GitHub Release" step.
+#
+# `pages: write` + `id-token: write` are here for the `docs` job below,
+# which calls the reusable Docs workflow to rebuild + deploy the site with
+# the freshly-published version. A reusable workflow's jobs run with the
+# *caller's* token permissions intersected with their own, so the caller
+# must grant these even though only the called workflow consumes them.
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 jobs:
   release:
@@ -332,3 +340,21 @@ jobs:
             echo "   GitHub Release: https://github.com/happycodelucky/backgrounder/releases/tag/$RELEASE_TAG"
             echo "   Note: Maven Central indexing can take up to ~30 min to appear in https://repo1.maven.org/maven2/."
           fi
+
+  # After a real publish, rebuild + deploy the docs site so its install
+  # snippets pick up the freshly-published version. The reusable Docs
+  # workflow re-runs `gh release view` (now returning the new tag) and feeds
+  # it to the mkdocs-macros plugin. Skipped on dry runs — nothing was
+  # published, so there's no new version to document.
+  #
+  # Without this, the docs site would only catch the new version on the next
+  # unrelated push to main.
+  docs:
+    name: Rebuild docs site
+    needs: release
+    if: ${{ !inputs.dryRun }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/docs.yml

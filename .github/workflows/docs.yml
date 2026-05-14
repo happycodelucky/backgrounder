@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  # Reusable: the Release workflow calls this after a real publish so the
+  # docs site re-resolves the freshly-published version without waiting for
+  # the next push to main. See .github/workflows/release.yml.
+  workflow_call:
 
 # Required by actions/deploy-pages on top of the default GITHUB_TOKEN scopes.
 permissions:
@@ -42,6 +46,25 @@ jobs:
 
       - name: Install mkdocs toolchain
         run: mise run docs:install
+
+      # Resolve the version for the docs build. The mkdocs-macros plugin
+      # reads BACKGROUNDER_VERSION (see /main.py): on push-to-main, release-
+      # triggered, and manual builds we pass the latest GitHub release tag so
+      # install snippets render the real pinned version. PR builds skip this
+      # step so previews render the 'main' fallback — appropriate for
+      # unreleased work.
+      - name: Resolve release version
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=$(gh release view --json tagName -q .tagName 2>/dev/null || true)
+          if [[ -n "$TAG" ]]; then
+            echo "BACKGROUNDER_VERSION=$TAG" >> "$GITHUB_ENV"
+            echo "Docs will render version: $TAG"
+          else
+            echo "No release tag found; docs will render the 'main' fallback."
+          fi
 
       # Dokka writes aggregated HTML into build/dokka/html and copyDokkaToDocs
       # mirrors it into docs/api/ where mkdocs picks it up.
