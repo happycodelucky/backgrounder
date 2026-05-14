@@ -6,22 +6,22 @@ name: Release
 # consumers.
 #
 # The runner picks `bumpType` (patch / minor / major); the workflow computes
-# the actual version. The patch component is *always* `GITHUB_RUN_NUMBER` —
-# the monotonic counter for this workflow. Runners never type a patch
-# number; they only decide which axis of the existing version to bump.
+# the actual version from the latest GitHub Release. The chosen component
+# is incremented and every component below it resets to zero — standard
+# semver. Runners never type a version number; they only choose the axis.
 #
-# Examples (latest release = v0.3.7, this is run #42):
-#   bumpType=patch                             → 0.3.42
-#   bumpType=minor                             → 0.4.42
-#   bumpType=major                             → 1.0.42
-#   bumpType=patch + versionSuffix=beta        → 0.3.42-beta
-#   bumpType=minor + versionSuffix=rc.1        → 0.4.42-rc.1
-#   bumpType=major + versionSuffix=preview     → 1.0.42-preview
+# Examples (latest release = v0.3.7):
+#   bumpType=patch                             → 0.3.8
+#   bumpType=minor                             → 0.4.0
+#   bumpType=major                             → 1.0.0
+#   bumpType=patch + versionSuffix=beta        → 0.3.8-beta
+#   bumpType=minor + versionSuffix=rc.1        → 0.4.0-rc.1
+#   bumpType=major + versionSuffix=preview     → 1.0.0-preview
 #
 # The optional `versionSuffix` input adds a SemVer pre-release identifier
 # (`MAJOR.MINOR.PATCH-SUFFIX`). Pre-release versions sort before their
-# corresponding final release in semver — `0.3.42-rc.1` is older than
-# `0.3.42`. The suffix is validated against the SemVer 2.0 grammar before
+# corresponding final release in semver — `0.4.0-rc.1` is older than
+# `0.4.0`. The suffix is validated against the SemVer 2.0 grammar before
 # anything is published.
 #
 # `dryRun` defaults to `true` because Maven Central releases are
@@ -34,7 +34,7 @@ on:
   workflow_dispatch:
     inputs:
       bumpType:
-        description: Which axis to bump (patch is auto-derived from the run number)
+        description: Which semver component to bump from the latest release
         required: true
         type: choice
         options:
@@ -79,15 +79,20 @@ jobs:
           fetch-depth: 0
 
       # Compute the version up front so every downstream step references
-      # the same value. The patch is *always* GITHUB_RUN_NUMBER (monotonic
-      # per-workflow counter) — re-running after a failure gets a fresh
-      # patch automatically, avoiding "tag already exists" conflicts.
+      # the same value. The version is derived from the latest GitHub
+      # Release: `bumpType` picks which component to increment, and every
+      # component below it resets to zero — standard semver.
       #
-      # Major / minor bumps reset lower components: bumping minor from
-      # 0.3.7 produces 0.4.<run>, not 0.4.7.
+      #   latest 0.9.0  + bumpType=patch  → 0.9.1
+      #   latest 0.9.3  + bumpType=minor  → 0.10.0
+      #   latest 0.9.3  + bumpType=major  → 1.0.0
       #
-      # First-release fallback: if no previous tag exists yet, we start
-      # from 0.0.<run>, 0.1.<run>, or 1.0.<run> depending on bumpType.
+      # Because a re-run computes the *same* version (no run-number in the
+      # patch any more), the "Verify version not already published" step
+      # and the tag-exists guard are what catch an accidental repeat.
+      #
+      # First-release fallback: if no previous release exists yet, the base
+      # is 0.0.0, so bumpType patch/minor/major yields 0.0.1 / 0.1.0 / 1.0.0.
       - name: Compute release version
         env:
           GH_TOKEN: ${{ github.token }}
@@ -101,30 +106,36 @@ jobs:
 
           if [[ -n "$LATEST" ]]; then
             # Strip the leading `v` and any pre-release suffix (e.g.
-            # v0.3.42-beta → 0.3.42) before parsing — we always bump from
+            # v0.3.7-beta → 0.3.7) before parsing — we always bump from
             # the numeric core, not from a previous pre-release suffix.
             BASE=${LATEST#v}
             BASE=${BASE%%-*}
-            IFS='.' read -r MAJOR MINOR _PATCH <<< "$BASE"
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$BASE"
           else
             echo "No previous release found; starting from 0.0.0 base."
             MAJOR=0
             MINOR=0
-            _PATCH=0
+            PATCH=0
           fi
 
+          # Each bump increments its own component and zeroes everything
+          # below it — standard semver. `patch` from 0.9.0 → 0.9.1,
+          # `minor` from 0.9.3 → 0.10.0, `major` from 0.9.3 → 1.0.0.
           case "$BUMP_TYPE" in
             patch)
               NEW_MAJOR=$MAJOR
               NEW_MINOR=$MINOR
+              NEW_PATCH=$((PATCH + 1))
               ;;
             minor)
               NEW_MAJOR=$MAJOR
               NEW_MINOR=$((MINOR + 1))
+              NEW_PATCH=0
               ;;
             major)
               NEW_MAJOR=$((MAJOR + 1))
               NEW_MINOR=0
+              NEW_PATCH=0
               ;;
             *)
               echo "::error::Unknown bumpType: $BUMP_TYPE"
@@ -132,7 +143,6 @@ jobs:
               ;;
           esac
 
-          NEW_PATCH=$GITHUB_RUN_NUMBER
           RELEASE_VERSION="${NEW_MAJOR}.${NEW_MINOR}.${NEW_PATCH}"
 
           # Optional pre-release suffix. Validate against the SemVer 2.0
@@ -170,7 +180,6 @@ jobs:
             echo "|---|---|"
             echo "| Previous release | \`${LATEST:-(none)}\` |"
             echo "| Bump type | \`${BUMP_TYPE}\` |"
-            echo "| Patch source | \`GITHUB_RUN_NUMBER\` (${GITHUB_RUN_NUMBER}) |"
             echo "| Suffix | \`${VERSION_SUFFIX:-(none)}\` |"
             echo "| **Computed version** | **\`${RELEASE_VERSION}\`** |"
             echo "| Tag | \`${RELEASE_TAG}\` |"
@@ -190,7 +199,7 @@ jobs:
       # a future `:backgrounder-testing` companion — just append the artifact
       # id and the next release picks it up automatically). The grep is
       # exact-match for `<version>X.Y.Z</version>` to avoid substring matches
-      # (e.g. version 0.3.4 matching 0.3.42).
+      # (e.g. version 0.3.1 matching 0.3.10).
       - name: Verify version not already published
         run: |
           set -euo pipefail
@@ -199,7 +208,7 @@ jobs:
             METADATA_URL="https://repo1.maven.org/maven2/com/happycodelucky/backgrounder/${ARTIFACT}/maven-metadata.xml"
             if curl -sf "$METADATA_URL" 2>/dev/null | grep -qE "<version>${ESCAPED}</version>"; then
               echo "::error::Version $RELEASE_VERSION is already published as com.happycodelucky.backgrounder:${ARTIFACT} on Maven Central."
-              echo "::error::Maven Central refuses to overwrite published artifacts. Re-run the workflow to get a fresh GITHUB_RUN_NUMBER patch."
+              echo "::error::Maven Central refuses to overwrite published artifacts. Cut a new release with a higher bumpType, or set versionSuffix for a pre-release."
               exit 1
             fi
           done
