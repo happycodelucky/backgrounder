@@ -63,15 +63,12 @@ jobs:
   release:
     runs-on: macos-latest
 
-    # The four MAVEN_CENTRAL_* secrets live on the `continous-deloyment`
+    # The four MAVEN_CENTRAL_* secrets live on the `continuous-deployment`
     # GitHub environment, not the repository scope. Without this binding
     # `secrets.MAVEN_CENTRAL_*` resolves to the empty string at runtime
     # and vanniktech fails with cryptic auth / signing errors that look
     # like a credentials problem in the downstream tool.
-    #
-    # Environment name carried over from reachable — yes, the typo.
-    # Don't fix it without renaming the environment on both repos in lockstep.
-    environment: continous-deloyment
+    environment: continuous-deployment
 
     steps:
       - name: Check out repository
