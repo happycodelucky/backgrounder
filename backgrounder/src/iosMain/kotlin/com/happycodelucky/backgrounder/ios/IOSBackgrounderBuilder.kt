@@ -4,7 +4,7 @@
 package com.happycodelucky.backgrounder.ios
 
 import com.happycodelucky.backgrounder.Backgrounder
-import com.happycodelucky.backgrounder.BackgrounderCore
+import com.happycodelucky.backgrounder.BackgrounderEngine
 import com.happycodelucky.backgrounder.BackgrounderEventListener
 import com.happycodelucky.backgrounder.EphemeralRegistry
 import com.happycodelucky.backgrounder.PendingInstantCalls
@@ -130,7 +130,7 @@ internal object IOSBackgrounderBuilder {
         val instantRunner = UIBackgroundTaskInstantRunner(pendingInstantCalls)
 
         return Backgrounder(
-            BackgrounderCore(
+            BackgrounderEngine(
                 registry = registry,
                 scheduler = scheduler,
                 instantRunner = instantRunner,
@@ -138,7 +138,7 @@ internal object IOSBackgrounderBuilder {
                     // Sweep first (clears ephemeral state before any handler fires),
                     // then registration (registers OS handlers, validates plist,
                     // queues the tick request, resurrects active periodics).
-                    // `BackgrounderCore.start()` already sealed the registry before
+                    // `BackgrounderEngine.start()` already sealed the registry before
                     // invoking this lambda.
                     //
                     // Foreground feed starts last so its UIApplication-state probe

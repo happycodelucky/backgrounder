@@ -78,7 +78,7 @@ public fun Backgrounder.Companion.create(
  *
  * @throws IllegalStateException if the [Backgrounder] was constructed
  *   from outside [Backgrounder.Companion.create] (e.g. directly via
- *   `Backgrounder(core)` — not normally possible since the constructor
+ *   `Backgrounder(engine)` — not normally possible since the constructor
  *   is `internal`, but tests sometimes find a way).
  */
 public fun Backgrounder.androidWorkerFactory(): WorkerFactory = AndroidBackgrounderInternals.workerFactory(this)

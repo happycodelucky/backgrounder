@@ -3,9 +3,10 @@ package com.happycodelucky.backgrounder
 import kotlinx.atomicfu.atomic
 
 /**
- * Internal value object held by [Backgrounder] that bundles the per-platform
- * graph (registry + scheduler) plus the platform-specific `start` / `shutdown`
- * lambdas the public `Backgrounder.start()` and `.shutdown()` calls dispatch to.
+ * The internal engine held by [Backgrounder] — it owns the per-platform graph
+ * (registry + scheduler + instant runner), the started-state flag, and the
+ * platform-specific `start` / `shutdown` lambdas the public `Backgrounder.start()`
+ * and `.shutdown()` calls dispatch to.
  *
  * Constructed by per-platform builders (`AndroidBackgrounderBuilder`,
  * `IOSBackgrounderBuilder`, `MacOSBackgrounderBuilder`) inside `androidMain` /
@@ -16,7 +17,7 @@ import kotlinx.atomicfu.atomic
  * the platform builder constructs the scheduler first, then captures it inside
  * the `onStart` / `onShutdown` lambdas it passes here. No `lateinit`, no `Lazy`.
  */
-internal class BackgrounderCore(
+internal class BackgrounderEngine(
     val registry: WorkerRegistry,
     val scheduler: Scheduler,
     val instantRunner: InstantRunner,
