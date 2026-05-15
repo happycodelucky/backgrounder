@@ -163,4 +163,26 @@ class RunNowTest {
             gate.complete("done")
             assertEquals("done", job.await())
         }
+
+    @Test
+    fun promotedSchedulingVerbsDelegateToScheduler() =
+        runTest {
+            val (backgrounder, scheduler, _) = build()
+
+            // schedule → scheduler.schedule
+            assertEquals(
+                ScheduleOutcome.Scheduled,
+                backgrounder.schedule(WorkRequest.OneTime(taskId)),
+            )
+            // scheduled → scheduler.scheduled
+            assertEquals(listOf(taskId), backgrounder.scheduled().map { it.taskId })
+            // guarantees → scheduler.guarantees
+            assertEquals(scheduler.guarantees(), backgrounder.guarantees())
+            // cancelAll → scheduler.cancelAll
+            backgrounder.schedule(WorkRequest.OneTime(otherId))
+            val outcome = backgrounder.cancelAll()
+            assertTrue(outcome is CancelOutcome.Cancelled)
+            assertEquals(2, outcome.pendingCleared)
+            assertTrue(backgrounder.scheduled().isEmpty())
+        }
 }
