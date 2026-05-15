@@ -389,7 +389,7 @@ Remote SPM distribution — where a hosted XCFramework zip is referenced by URL 
 
 When starting any task:
 
-1. Read this file. Read `gradle/libs.versions.toml`.
+1. Read this file. Read `gradle/libs.versions.toml`. Skim [`.claude/lessons/LESSONS.md`](.claude/lessons/LESSONS.md) for prior bugs, decisions, never-dos, and troubleshooting notes relevant to the task.
 2. Adding a dependency? Web-search the latest stable version first. Don't invent versions.
 3. Need platform-specific behavior? Walk Section 5 in order. Don't skip to `expect`/`actual`.
 4. Considering a hand-written replacement? Section 6 process. Default answer is "use the library."
@@ -397,6 +397,8 @@ When starting any task:
 6. Done means: `./gradlew check` passes and `./gradlew :backgrounder:linkDebugFrameworkIosArm64` builds clean.
 7. Opting into experimental APIs? One-line comment explaining what's experimental and the rollback path.
 8. Wasm gap? `// TODO(wasm)` and ship Tier 1.
+9. **Stuck for more than a few minutes?** Grep [`.claude/lessons/LESSONS.md`](.claude/lessons/LESSONS.md) — we may have hit it before.
+10. **Learned something worth remembering?** Add an entry to [`.claude/lessons/LESSONS.md`](.claude/lessons/LESSONS.md) the moment you learn it — bugs hit, design decisions made, "never do this again" rules, or how you got unstuck. Terse: 1–3 lines. The file's own "How to add an entry" section has the format.
 
 ---
 
