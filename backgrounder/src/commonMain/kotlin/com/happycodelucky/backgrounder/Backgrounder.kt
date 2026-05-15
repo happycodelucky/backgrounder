@@ -10,8 +10,10 @@ import kotlin.native.ObjCName
  * initialization" §9, step 5).
  *
  * Three things hang off the instance:
- *  - [scheduler]: the `Scheduler` surface (`schedule`, `cancel`, …). Hold a
- *    reference on the user's own app graph; never re-resolve.
+ *  - scheduling verbs ([schedule], [cancel], [cancelAll], [scheduled],
+ *    [guarantees]): the scheduling surface, promoted directly onto the
+ *    instance. There is no separate `Scheduler` object to hold — pass the
+ *    `Backgrounder` instance itself down the app graph.
  *  - [register]: associate a `TaskId` with a factory closure that builds a
  *    fresh `BackgroundWorker` per dispatch.
  *  - [start]: finalize init (seals the registry; iOS/macOS run the ephemeral
@@ -33,14 +35,6 @@ import kotlin.native.ObjCName
 public class Backgrounder internal constructor(
     private val core: BackgrounderCore,
 ) {
-    /**
-     * The scheduling surface. Hold this on your app graph; passing it down is
-     * the recommended way to expose scheduling capability to the rest of the
-     * app without re-resolving from a singleton.
-     */
-    @ObjCName(swiftName = "scheduler")
-    public val scheduler: Scheduler get() = core.scheduler
-
     /**
      * Register a [BackgroundWorker] factory for [taskId]. Must be called
      * before [start]. Throws if [start] has already run or [taskId] is
@@ -94,6 +88,44 @@ public class Backgrounder internal constructor(
     public fun start() {
         core.start()
     }
+
+    /**
+     * Schedule a [WorkRequest]. If a request with the same [WorkRequest.taskId]
+     * is already pending, [policy] decides what happens.
+     *
+     * Platform-backed: `WorkManager` on Android, `BGTaskScheduler` on iOS,
+     * `NSBackgroundActivityScheduler` on macOS.
+     */
+    @ObjCName(swiftName = "schedule")
+    public fun schedule(
+        request: WorkRequest,
+        policy: ConflictPolicy = ConflictPolicy.Replace,
+    ): ScheduleOutcome = core.scheduler.schedule(request, policy)
+
+    /**
+     * Cancel every pending scheduled request the library knows about.
+     *
+     * Does not interrupt already-running workers on iOS — see
+     * [SchedulerGuarantees.cancelsInFlight]. To also cancel in-flight
+     * [runNow] calls for a single id, use [cancel].
+     */
+    @ObjCName(swiftName = "cancelAll")
+    public fun cancelAll(): CancelOutcome = core.scheduler.cancelAll()
+
+    /**
+     * Snapshot of currently-scheduled (pending or running) tasks the library
+     * knows about. Best-effort per platform.
+     *
+     * No `@Throws` — SKIE bridges `suspend fun` as Swift `async throws` and
+     * routes coroutine cancellation through Swift's native `Task.cancel` /
+     * `CancellationError` machinery (CLAUDE.md §8).
+     */
+    @ObjCName(swiftName = "scheduled")
+    public suspend fun scheduled(): List<ScheduledTask> = core.scheduler.scheduled()
+
+    /** What this platform's scheduler actually guarantees. */
+    @ObjCName(swiftName = "guarantees")
+    public fun guarantees(): SchedulerGuarantees = core.scheduler.guarantees()
 
     /**
      * Run [task] immediately under [taskId] and suspend until it completes,
@@ -155,22 +187,24 @@ public class Backgrounder internal constructor(
 
     /**
      * Cancel everything the library knows about for [taskId]:
-     *  - any pending scheduled request (delegates to [Scheduler.cancel]);
+     *  - any pending scheduled request;
      *  - any in-flight scheduled worker (best-effort per platform);
      *  - any in-flight [runNow] call (its `Deferred` completes with
      *    `CancellationException`, the caller's `await` rethrows).
      *
      * Returns `Cancelled(pendingCleared)` where `pendingCleared` is the
-     * platform-reported count from [Scheduler.cancel] (best-effort — Android
-     * reports an accurate count; iOS reports 0 or 1). `runNow` cancellations
-     * are **not** added to `pendingCleared` — that field's existing meaning
-     * is "platform-pending requests removed" and we keep it stable.
+     * platform-reported count of pending scheduled requests removed
+     * (best-effort — Android reports an accurate count; iOS reports 0 or 1).
+     * `runNow` cancellations are **not** added to `pendingCleared` — that
+     * field's meaning is "platform-pending requests removed" and we keep it
+     * stable.
      *
      * Returns `NoSuchTask` only when neither a scheduled request nor an
      * in-flight `runNow` existed for [taskId].
      *
-     * For "scheduled-only" cancellation, use [scheduler]`.cancel(taskId)` —
-     * it remains unchanged.
+     * This is the broad cancel — it covers both scheduled work and [runNow].
+     * [cancelAll] cancels every pending scheduled request but does not touch
+     * in-flight [runNow] calls.
      */
     @ObjCName(swiftName = "cancel")
     public fun cancel(taskId: TaskId): CancelOutcome {

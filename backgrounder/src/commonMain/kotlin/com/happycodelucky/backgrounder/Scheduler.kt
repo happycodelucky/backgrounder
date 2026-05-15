@@ -4,7 +4,13 @@ import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
 /**
- * Schedules and inspects background work.
+ * Internal scheduling surface. Schedules and inspects background work.
+ *
+ * Not part of the public API — the scheduling verbs are promoted directly
+ * onto [Backgrounder] ([Backgrounder.schedule], [Backgrounder.cancelAll],
+ * [Backgrounder.scheduled], [Backgrounder.guarantees]). This interface is the
+ * internal seam the per-platform actuals implement and [BackgrounderCore]
+ * delegates to.
  *
  * Platform actuals:
  * - Android: `WorkManagerScheduler` (backed by Jetpack `WorkManager`).
@@ -12,17 +18,19 @@ import kotlin.native.ObjCName
  * - macOS:   `NSBackgroundActivityBackedScheduler` (backed by Foundation's
  *            `NSBackgroundActivityScheduler`).
  *
- * Get the platform's instance from Koin (`get<Scheduler>()`). Most methods are
- * non-suspend because both `WorkManager.enqueue` and `BGTaskScheduler.submit`
- * are non-blocking. [scheduled] is `suspend` because Android's
- * `WorkManager.getWorkInfos` returns a `ListenableFuture` and iOS's
+ * Most methods are non-suspend because both `WorkManager.enqueue` and
+ * `BGTaskScheduler.submit` are non-blocking. [scheduled] is `suspend` because
+ * Android's `WorkManager.getWorkInfos` returns a `ListenableFuture` and iOS's
  * `BGTaskScheduler.getPendingTaskRequests` is callback-shaped.
+ *
+ * The `@ObjCName` annotations are retained on the members so the promoted
+ * `Backgrounder` verbs that delegate here keep a consistent Swift surface.
  *
  * `@OptIn(ExperimentalObjCName::class)`: standard Swift-rename annotation;
  * stable in practice and used by SKIE for boundary refinement.
  */
 @OptIn(ExperimentalObjCName::class)
-public interface Scheduler {
+internal interface Scheduler {
     /**
      * Schedule a [WorkRequest]. If a request with the same [WorkRequest.taskId]
      * is already pending, [policy] decides what happens.
