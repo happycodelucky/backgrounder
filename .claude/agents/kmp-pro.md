@@ -20,7 +20,7 @@ Your job is to author or review Kotlin code in `/backgrounder` against this proj
 
 ## The bugs we have actually hit (memorise these)
 
-When reviewing or writing similar code, look for these patterns specifically.
+When reviewing or writing similar code, look for these patterns specifically. These five entries (H1–H4, M6) are the review-time pattern catalogue — keep them here. The fuller bug ledger lives in [`.claude/lessons/LESSONS.md`](../lessons/LESSONS.md) under §Bugs (`B-001` onwards), which covers the same five plus everything else that's landed (round-1 follow-ups, release tooling, mapper extraction, etc.). Cross-references: H1↔B-001, H2↔B-002, H3↔B-003, H4↔B-004, M6↔B-005.
 
 ### H1 — iOS backoff index off-by-one
 **Pattern:** A retry path computes `policy.delayFor(attempt + 1)` (or `delayFor(nextAttempt)`).
