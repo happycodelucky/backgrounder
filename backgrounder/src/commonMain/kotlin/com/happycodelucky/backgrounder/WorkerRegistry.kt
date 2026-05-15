@@ -7,16 +7,24 @@ import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
 /**
- * The DI seam: maps stable [TaskId]s to factories that build a fresh
- * [BackgroundWorker] per invocation.
+ * The DI seam: resolves a stable [TaskId] to a fresh [BackgroundWorker] per
+ * invocation. Two registration shapes feed it:
  *
- * Each factory is a lambda that closes over the user's DI graph (typically
- * resolving from Koin). The library calls the factory each time the platform
- * fires a worker — never caches the worker instance itself.
+ *  - **Per-id**: [register] taking a `TaskId` + closure. One id, one factory
+ *    lambda. The closure closes over the user's DI graph.
+ *  - **Bulk**: [register] taking a [BackgroundWorkerFactory]. One factory
+ *    object owns many ids and resolves the concrete worker lazily.
  *
- * Register every factory at app launch *before* `Backgrounder.registerHandlers`
- * (iOS / macOS) or `Backgrounder.markReady` (Android). Re-registering the same
- * id throws.
+ * The library calls the resolved factory each time the platform fires a
+ * worker — never caches the worker instance itself.
+ *
+ * **Resolution order** in [create]: per-id registrations first, then
+ * factories in registration order, first non-null wins. Declared id sets
+ * must not overlap (factory-vs-factory or factory-vs-per-id) — overlapping
+ * registration throws, so resolution is always unambiguous.
+ *
+ * Register everything at app launch *before* `Backgrounder.start()`. The
+ * registry is sealed at `start()`; re-registering after that throws.
  *
  * `@OptIn(ExperimentalObjCName::class)`: Swift-rename annotations so iOS app
  * code calls `registry.register(taskId:factory:)` (CLAUDE.md §8).
@@ -26,14 +34,14 @@ public class WorkerRegistry internal constructor() {
     // MUST NOT call suspend functions inside this block — see CLAUDE.md §3.
     private val lock = SynchronizedObject()
     private val factories: MutableMap<TaskId, () -> BackgroundWorker> = mutableMapOf()
+    private val factoryChain: MutableList<BackgroundWorkerFactory> = mutableListOf()
     private val sealed = atomic(false)
 
     /**
      * Associate [taskId] with a [factory] that builds a fresh [BackgroundWorker] per dispatch.
      *
-     * Must be called before [Backgrounder.registerHandlers] (iOS / macOS) or
-     * [Backgrounder.markReady] (Android). Throws if the registry is already sealed or
-     * [taskId] was already registered.
+     * Must be called before [Backgrounder.start]. Throws if the registry is already sealed or
+     * [taskId] is already claimed by another per-id registration or a [BackgroundWorkerFactory].
      *
      * @throws IllegalStateException if the registry is sealed.
      * @throws IllegalArgumentException if [taskId] is already registered.
@@ -45,18 +53,61 @@ public class WorkerRegistry internal constructor() {
         factory: () -> BackgroundWorker,
     ): Unit =
         synchronized(lock) {
-            check(!sealed.value) {
-                "WorkerRegistry has been sealed; register all workers before app launch completes."
-            }
+            checkNotSealed()
             require(taskId !in factories) {
                 "WorkerRegistry: task id '$taskId' is already registered."
+            }
+            val owningFactory = factoryChain.firstOrNull { taskId in it.taskIds }
+            require(owningFactory == null) {
+                "WorkerRegistry: task id '$taskId' is already claimed by a registered BackgroundWorkerFactory."
             }
             factories[taskId] = factory
         }
 
-    /** Returns the set of task ids currently registered. Snapshot — safe to call at any time. */
+    /**
+     * Register a [BackgroundWorkerFactory] that owns the ids in
+     * [BackgroundWorkerFactory.taskIds].
+     *
+     * Must be called before [Backgrounder.start]. Throws if the registry is already sealed or
+     * any of the factory's ids collide with a per-id registration or another factory.
+     *
+     * @throws IllegalStateException if the registry is sealed.
+     * @throws IllegalArgumentException if any of [BackgroundWorkerFactory.taskIds] is already
+     *   registered, or the factory declares no ids.
+     */
+    @ObjCName(swiftName = "register")
+    @Throws(IllegalStateException::class, IllegalArgumentException::class)
+    public fun register(factory: BackgroundWorkerFactory): Unit =
+        synchronized(lock) {
+            checkNotSealed()
+            require(factory.taskIds.isNotEmpty()) {
+                "WorkerRegistry: BackgroundWorkerFactory declares no task ids."
+            }
+            factory.taskIds.forEach { taskId ->
+                require(taskId !in factories) {
+                    "WorkerRegistry: task id '$taskId' is already registered."
+                }
+                val owningFactory = factoryChain.firstOrNull { taskId in it.taskIds }
+                require(owningFactory == null) {
+                    "WorkerRegistry: task id '$taskId' is already claimed by a registered BackgroundWorkerFactory."
+                }
+            }
+            factoryChain.add(factory)
+        }
+
+    /**
+     * Returns the set of task ids currently registered — the union of per-id
+     * registrations and every [BackgroundWorkerFactory]'s declared ids.
+     * Snapshot — safe to call at any time.
+     */
     @ObjCName(swiftName = "registeredIds")
-    public fun registeredIds(): Set<TaskId> = synchronized(lock) { factories.keys.toSet() }
+    public fun registeredIds(): Set<TaskId> =
+        synchronized(lock) {
+            buildSet {
+                addAll(factories.keys)
+                factoryChain.forEach { addAll(it.taskIds) }
+            }
+        }
 
     /**
      * Mark the registry sealed. After this, [register] throws — protects against
@@ -68,13 +119,33 @@ public class WorkerRegistry internal constructor() {
 
     internal fun create(taskId: TaskId): BackgroundWorker =
         synchronized(lock) {
-            val factory =
-                factories[taskId]
+            factories[taskId]?.let { return@synchronized it() }
+            val owningFactory =
+                factoryChain.firstOrNull { taskId in it.taskIds }
                     ?: throw NoFactoryRegisteredException(taskId)
-            factory()
+            owningFactory.create(taskId)
+                ?: throw FactoryDeclinedException(taskId)
         }
+
+    private fun checkNotSealed() {
+        check(!sealed.value) {
+            "WorkerRegistry has been sealed; register all workers before app launch completes."
+        }
+    }
 
     public class NoFactoryRegisteredException(
         public val taskId: TaskId,
     ) : IllegalStateException("No BackgroundWorker factory registered for task id '$taskId'")
+
+    /**
+     * Thrown when a [BackgroundWorkerFactory] declares ownership of a [taskId]
+     * in [BackgroundWorkerFactory.taskIds] but returns `null` from
+     * [BackgroundWorkerFactory.create] for it — a violation of the factory's
+     * sync contract.
+     */
+    public class FactoryDeclinedException(
+        public val taskId: TaskId,
+    ) : IllegalStateException(
+            "BackgroundWorkerFactory declared task id '$taskId' but create() returned null for it",
+        )
 }
