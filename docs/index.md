@@ -27,7 +27,7 @@ backgrounder.register(SyncWorker.ID) { SyncWorker(repo = appGraph.repo) }
 backgrounder.start()
 
 // Anywhere later
-backgrounder.scheduler.schedule(
+backgrounder.schedule(
     WorkRequest.OneTime(
         taskId = SyncWorker.ID,
         constraints = WorkConstraints(networkRequired = NetworkRequirement.Any),
@@ -38,11 +38,11 @@ backgrounder.scheduler.schedule(
 
 ## What it does
 
-- **One scheduling API** across platforms — `Scheduler.schedule()`, `cancel()`, `cancelAll()`, `scheduled()`.
+- **One scheduling API** across platforms — `Backgrounder.schedule()`, `cancel()`, `cancelAll()`, `scheduled()`.
 - **One worker contract** — `BackgroundWorker.execute(WorkerContext): WorkResult`. Inject your dependencies through the factory closure you register at app launch.
 - **Sealed `WorkRequest`** — `OneTime` and `Periodic`, both with input data, constraints, retry, and an `ephemeral` flag for the "ran-before-init" Android foot-gun.
 - **Instant dispatch** — `Backgrounder.runNow<R>(taskId) { … }` runs a lambda in the background **right now** and suspends until the typed result is back. Bypasses constraints / retries / the registry; routed through the platform's real background primitive so the work survives an immediate app-background.
-- **Honest about platform differences.** `Scheduler.guarantees()` returns a per-platform truth table you can branch UX on.
+- **Honest about platform differences.** `Backgrounder.guarantees()` returns a per-platform truth table you can branch UX on.
 - **No required DI dependency.** Backgrounder doesn't ship a DI module. The factory closure pattern works equally well with Koin, Hilt (Android), kotlin-inject, or hand-wired graphs.
 
 ## Why this exists

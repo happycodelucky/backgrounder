@@ -39,7 +39,7 @@ Even with the sweep, there's a tiny window on Android where `JobScheduler` could
 When **not** to use it: workers that are genuinely self-contained (e.g. POSTing a queued event payload to a server) — those should survive process death and reboot, and `ephemeral = false` is the right default.
 
 ```kotlin
-backgrounder.scheduler.schedule(
+backgrounder.schedule(
     WorkRequest.OneTime(
         taskId = SyncWorker.ID,
         ephemeral = true,         // re-scheduled after init each cold start

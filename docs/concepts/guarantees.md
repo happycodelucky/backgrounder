@@ -1,6 +1,6 @@
 # Guarantees
 
-`Scheduler.guarantees()` returns a per-platform truth table. UX should branch on it rather than assume parity.
+`Backgrounder.guarantees()` returns a per-platform truth table. UX should branch on it rather than assume parity.
 
 | Field                       | Android `WorkManager` | iOS 18 `BGTaskScheduler` | macOS 15 `NSBackgroundActivityScheduler` |
 | --------------------------- | --------------------- | ------------------------ | ---------------------------------------- |
@@ -17,12 +17,12 @@ Read carefully:
 
 - **`survivesForceQuit = false` on iOS.** The single most important caveat. See [Force-quit caveat (iOS)](../platforms/force-quit.md).
 - **`honoursWallClock = false` on iOS** means `earliestBeginDate` is a *hint* — the system can defer indefinitely based on opaque heuristics (battery state, usage patterns, Low Power Mode).
-- **`cancelsInFlight = false` on iOS** means `Scheduler.cancel(taskId)` only kills *pending* requests; a worker already executing on iOS finishes whatever it was doing.
+- **`cancelsInFlight = false` on iOS** means `Backgrounder.cancel(taskId)` only kills *pending* requests for scheduled work; a worker already executing on iOS finishes whatever it was doing.
 
 ## Branching UX on guarantees
 
 ```kotlin
-val g = scheduler.guarantees()
+val g = backgrounder.guarantees()
 
 if (!g.survivesForceQuit) {
     // iOS: educate the user.

@@ -5,7 +5,7 @@ Periodic jobs repeat indefinitely until cancelled. The Android floor is **15 min
 ```kotlin
 import kotlin.time.Duration.Companion.minutes
 
-backgrounder.scheduler.schedule(
+backgrounder.schedule(
     WorkRequest.Periodic(
         taskId = SyncWorker.ID,
         interval = 30.minutes,

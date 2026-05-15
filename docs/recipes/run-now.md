@@ -27,7 +27,7 @@ let saved: SavedDocument = try await backgrounder.run(taskId: saveTaskId) {
 
 ## What it does, what it doesn't
 
-| | Scheduled (`Scheduler.schedule`) | Instant (`Backgrounder.runNow`) |
+| | Scheduled (`Backgrounder.schedule`) | Instant (`Backgrounder.runNow`) |
 | --- | --- | --- |
 | When it runs | When the OS decides constraints are satisfied | Immediately on the calling coroutine |
 | Network / charging gating | `WorkConstraints` honored | None — caller checks if needed |
@@ -36,7 +36,7 @@ let saved: SavedDocument = try await backgrounder.run(taskId: saveTaskId) {
 | Result | Worker returns `WorkResult`; caller doesn't see it directly | Caller `await`s the typed `R` |
 | Survives the caller | Yes — the schedule outlives the calling coroutine | No — caller cancellation cancels the work |
 
-If you need constraint gating, retries, or "schedule and forget," use `Scheduler.schedule`. If you need "do this and give me back the result," use `runNow`.
+If you need constraint gating, retries, or "schedule and forget," use `Backgrounder.schedule`. If you need "do this and give me back the result," use `runNow`.
 
 ## Pre-emption — last call wins
 

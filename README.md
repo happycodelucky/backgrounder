@@ -67,15 +67,19 @@ class SyncWorker(private val repo: MyRepository) : BackgroundWorker {
 The library never instantiates your worker by reflection — you give it a factory at app launch:
 
 ```kotlin
+// Register a single worker
 backgrounder.register(SyncWorker.ID) { SyncWorker(repo = appGraph.repo) }
+
+// Or register many workers at once with a BackgroundWorkerFactory
+backgrounder.register(appModule.workerFactory())
 ```
 
-The closure is yours: resolve dependencies through Koin, Hilt, kotlin-inject, hand-wired singletons — whatever your app already uses. A fresh `SyncWorker` is built per invocation with all its dependencies wired.
+The closure — or factory — is yours: resolve dependencies through Koin, Hilt, kotlin-inject, hand-wired singletons — whatever your app already uses. A fresh worker is built per invocation with all its dependencies wired.
 
 Then schedule from anywhere:
 
 ```kotlin
-backgrounder.scheduler.schedule(
+backgrounder.schedule(
     WorkRequest.OneTime(
         taskId = SyncWorker.ID,
         constraints = WorkConstraints(networkRequired = NetworkRequirement.Any),
@@ -227,7 +231,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 ## What each platform actually guarantees
 
-Read at runtime via `backgrounder.scheduler.guarantees()`:
+Read at runtime via `backgrounder.guarantees()`:
 
 |                              | Android `WorkManager` | iOS 18 `BGTaskScheduler` | macOS 15 `NSBackgroundActivityScheduler` |
 | ---------------------------- | --------------------- | ------------------------ | ---------------------------------------- |
@@ -288,7 +292,7 @@ mise run xcframework    # release Backgrounder.xcframework (KMMBridge artifact)
 ## Repository conventions
 
 - **Versions** (`gradle/libs.versions.toml`) are the single source of truth. Web-search before bumping any dependency (CLAUDE.md §2). Kotlin is pinned at the highest version SKIE supports — currently 2.3.20 with SKIE 0.10.11.
-- Every `suspend fun` reachable from Swift carries `@Throws(CancellationException::class)`; every public method carries `@ObjCName(swiftName = ...)` so the call site reads like Swift (CLAUDE.md §8).
+- Every public method carries `@ObjCName(swiftName = ...)` so the call site reads like Swift. `suspend fun`s reachable from Swift do **not** include `CancellationException` in `@Throws` — SKIE bridges cancellation through Swift's native `CancellationError` automatically (CLAUDE.md §8).
 - `internal` by default; widen visibility only when needed (CLAUDE.md §3).
 - **DI is a user choice.** The library uses constructor injection internally and a factory-closure seam for user code; no DI container is required.
 

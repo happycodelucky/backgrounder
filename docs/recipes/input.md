@@ -9,7 +9,7 @@ val input = WorkInput.of(
     "thumbnail" to WorkValue.BooleanValue(true),
 )
 
-backgrounder.scheduler.schedule(
+backgrounder.schedule(
     WorkRequest.OneTime(
         taskId = ProcessImageWorker.ID,
         input = input,
