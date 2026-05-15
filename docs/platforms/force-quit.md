@@ -15,10 +15,10 @@ This is **not** the same as the OS killing your process for memory pressure or s
 
 ## What surfaces in your UX
 
-`Scheduler.guarantees().survivesForceQuit` is `false` on iOS. Branch on it:
+`Backgrounder.guarantees().survivesForceQuit` is `false` on iOS. Branch on it:
 
 ```kotlin
-if (!scheduler.guarantees().survivesForceQuit) {
+if (!backgrounder.guarantees().survivesForceQuit) {
     // iOS-only educational nudge.
     showOnboardingTip(
         title = "Keep notifications fresh",
@@ -42,7 +42,7 @@ Concrete patterns:
 
 ## What the library does
 
-- Reports `survivesForceQuit = false` from `Scheduler.guarantees()`.
+- Reports `survivesForceQuit = false` from `Backgrounder.guarantees()`.
 - Logs a Kermit warning at info level if a periodic schedule's expected next-run is more than 24 hours stale on `backgrounder.start()` — likely sign of force-quit-then-relaunch.
 - Resurrects active periodic schedules at next cold launch via `BGTaskScheduler.submit`. Force-quit drops the OS's pending-request set; the library re-submits.
 

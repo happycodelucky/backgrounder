@@ -142,7 +142,7 @@ After the launch sequence in [Getting started](getting-started.md) is in
 place, this snippet should compile and run on every platform:
 
 ```kotlin
-println(backgrounder.scheduler.guarantees())
+println(backgrounder.guarantees())
 ```
 
 Output (truncated, platform-dependent — see [Guarantees](concepts/guarantees.md)):

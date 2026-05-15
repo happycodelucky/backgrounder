@@ -3,7 +3,7 @@
 Set `WorkConstraints.networkRequired` on the request, and the platform holds the worker until the network is up.
 
 ```kotlin
-scheduler.schedule(
+backgrounder.schedule(
     WorkRequest.OneTime(
         taskId = SyncWorker.ID,
         constraints = WorkConstraints(

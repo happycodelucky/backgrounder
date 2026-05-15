@@ -6,7 +6,7 @@ A one-shot job runs once. It survives process death and reboot (unless `ephemera
 import com.happycodelucky.backgrounder.*
 import kotlin.time.Duration.Companion.seconds
 
-val outcome = backgrounder.scheduler.schedule(
+val outcome = backgrounder.schedule(
     WorkRequest.OneTime(
         taskId = SyncWorker.ID,
         constraints = WorkConstraints(
@@ -38,8 +38,8 @@ when (outcome) {
 If a one-shot with the same `TaskId` is already pending:
 
 ```kotlin
-backgrounder.scheduler.schedule(request, policy = ConflictPolicy.Replace) // default — cancel pending, enqueue new
-backgrounder.scheduler.schedule(request, policy = ConflictPolicy.Keep)    // ignore new, keep pending
+backgrounder.schedule(request, policy = ConflictPolicy.Replace) // default — cancel pending, enqueue new
+backgrounder.schedule(request, policy = ConflictPolicy.Keep)    // ignore new, keep pending
 ```
 
 `Append` (Android chained-work semantics) is v2.

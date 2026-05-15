@@ -115,6 +115,7 @@ nav:
     - recipes/one-shot.md
     - recipes/run-now.md
     - recipes/periodic.md
+    - recipes/worker-factory.md
     - recipes/cancel.md
     - recipes/inspect.md
     - recipes/input.md

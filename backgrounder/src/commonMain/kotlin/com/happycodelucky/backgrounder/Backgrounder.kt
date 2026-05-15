@@ -4,10 +4,8 @@ import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
 /**
- * The new constructed-instance entry point — held by the user's app graph for
- * the app's lifetime. This will be renamed to `Backgrounder` when the legacy
- * `object Backgrounder` is removed in the cut-over commit (plan §"DI-free
- * initialization" §9, step 5).
+ * Constructed-instance entry point — held by the user's app graph for
+ * the app's lifetime.
  *
  * Three things hang off the instance:
  *  - scheduling verbs ([schedule], [cancel], [cancelAll], [scheduled],
@@ -132,7 +130,7 @@ public class Backgrounder internal constructor(
      * returning the typed result `R`.
      *
      * **Semantics — "raw" background dispatch.** Unlike scheduled work
-     * ([scheduler] + [register]), `runNow`:
+     * ([schedule] + [register]), `runNow`:
      *  - runs *immediately*, with no [WorkConstraints], no [BackoffPolicy], no
      *    retries, no [ExecutionHint] gating;
      *  - does **not** consult [WorkerRegistry] — the [task] lambda *is* the work,

@@ -10,7 +10,7 @@
     - **iOS**: `UIApplication.beginBackgroundTask(withName:expirationHandler:)` — *not* `BGTaskScheduler`. `BGTaskScheduler` requires `Info.plist` permitted-identifiers and is for deferred work; `beginBackgroundTask` grants ~30s of grace if the app backgrounds during the call, with no `Info.plist` requirement. The `TaskId` is purely an in-process pre-emption key on iOS — never sent to the OS scheduler.
     - **macOS**: library-owned `SupervisorJob` scope (macOS apps generally have foreground time; `NSBackgroundActivityScheduler` is interval-shaped and a poor fit for one-shot dispatch).
 - **Pre-emption is the contract.** `runNow(taskId, …)` cancels any in-flight `runNow`, any pending scheduled request, and any in-flight scheduled worker for the same `TaskId` **before** submitting its own request. Concurrent `runNow` calls with the same `TaskId` are "last call wins" — two typed results to one caller would be ambiguous.
-- **Unified `Backgrounder.cancel(taskId)`** cancels everything for a `TaskId` — scheduled requests *and* in-flight `runNow`. `Scheduler.cancel(taskId)` keeps its narrow scheduled-only meaning.
+- **Unified `Backgrounder.cancel(taskId)`** cancels everything for a `TaskId` — scheduled requests *and* in-flight `runNow`. `Backgrounder.cancelAll()` covers only pending scheduled requests and does not touch in-flight `runNow` calls.
 - Structured concurrency throughout: caller cancellation cancels the OS request, the lambda observes `CancellationException`, and the caller's `await` rethrows. Lambda exceptions propagate to the caller via `@Throws`.
 
 ### iOS periodic dispatch
@@ -25,9 +25,10 @@
 
 First public artifact in preparation. The v1 surface is feature-complete:
 
-- Constructed-instance `Backgrounder` entry point. Three-step launch: `Backgrounder.create(...)` → `register(taskId, factory)` → `start()`. Hold one instance per app for the lifetime of the process.
+- Constructed-instance `Backgrounder` entry point. Three-step launch: `Backgrounder.create(...)` → `register(...)` → `start()`. Hold one instance per app for the lifetime of the process.
+- **Two registration shapes.** Per-id: `register(taskId) { factory }` for a single task id. Bulk: `register(factory: BackgroundWorkerFactory)` for one factory object that owns many task ids. Overlapping id sets are rejected at registration time; resolution order is per-id first, then factories in registration order.
 - **No DI container required.** Factory closures resolve dependencies from whatever DI graph the consumer already uses (Koin, Hilt, kotlin-inject, hand-wired); the library itself ships zero DI dependency.
-- Cross-platform `Scheduler` API with `schedule` / `cancel` / `cancelAll` / `scheduled()` / `guarantees()`. Reach via `backgrounder.scheduler`.
+- Scheduling verbs promoted directly onto `Backgrounder`: `schedule` / `cancel` / `cancelAll` / `scheduled()` / `guarantees()`. Pass the `Backgrounder` instance wherever scheduling is needed — no separate `Scheduler` handle.
 - Sealed `WorkRequest`: `OneTime` and `Periodic`, both with `ephemeral` flag.
 - `BackoffPolicy` (Linear / Exponential) with `maxAttempts`.
 - `ExecutionHint`: `Standard` and `Expedited(QuotaPolicy)`.

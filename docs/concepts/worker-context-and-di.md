@@ -2,7 +2,9 @@
 
 ## The factory pattern
 
-Workers are *built by the user* — through a factory closure registered at app launch — and then *invoked by the library*. The closure has access to whatever DI graph (or hand-wired singletons) you've already assembled, so each dispatch gets a fresh worker with its dependencies wired:
+Workers are *built by the user* — through a factory closure (or a `BackgroundWorkerFactory`) registered at app launch — and then *invoked by the library*. The closure or factory has access to whatever DI graph (or hand-wired singletons) you've already assembled, so each dispatch gets a fresh worker with its dependencies wired.
+
+**Per-id registration** — one closure per task id:
 
 ```kotlin
 backgrounder.register(SyncWorker.ID) { SyncWorker(repo = appGraph.repository) }
@@ -10,6 +12,26 @@ backgrounder.register(UploadWorker.ID) {
     UploadWorker(api = appGraph.api, retryPolicy = appGraph.retryPolicy)
 }
 ```
+
+**Bulk registration** — one `BackgroundWorkerFactory` owns many task ids. Useful when an app module owns a set of workers and you want to register them all at once without listing each id at the call site:
+
+```kotlin
+// Implement BackgroundWorkerFactory in your module
+class AppModuleWorkerFactory(private val graph: AppGraph) : BackgroundWorkerFactory {
+    override val taskIds = setOf(SyncWorker.ID, UploadWorker.ID)
+
+    override fun create(taskId: TaskId): BackgroundWorker? = when (taskId) {
+        SyncWorker.ID   -> SyncWorker(repo = graph.repository)
+        UploadWorker.ID -> UploadWorker(api = graph.api, retryPolicy = graph.retryPolicy)
+        else            -> null
+    }
+}
+
+// Register at launch
+backgrounder.register(AppModuleWorkerFactory(appGraph))
+```
+
+The `taskIds` set and `create` must stay in sync — the library registers OS handlers for every id in `taskIds` at `start()`. If `create` is called for an id that is in `taskIds` but returns `null`, the registry throws `WorkerRegistry.FactoryDeclinedException`. Overlapping id sets (between two factories, or between a factory and a per-id registration) are rejected at registration time so resolution is always unambiguous.
 
 The library calls your factory each time the platform dispatches a worker — never caches the worker instance. That makes statefulness inside the worker irrelevant: each invocation starts clean.
 

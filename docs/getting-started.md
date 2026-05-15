@@ -163,12 +163,12 @@ The factory closure you pass to `register(...)` is where DI happens — pass a c
 
 ## 4. Schedule
 
-From anywhere in your app — pass `backgrounder.scheduler` down through your app graph as you would any service. Hold one reference; never re-resolve.
+From anywhere in your app — pass the `backgrounder` instance down through your app graph as you would any service. Hold one reference; never re-resolve.
 
 ```kotlin
 import kotlin.time.Duration.Companion.seconds
 
-backgrounder.scheduler.schedule(
+backgrounder.schedule(
     WorkRequest.OneTime(
         taskId = SyncWorker.ID,
         constraints = WorkConstraints(networkRequired = NetworkRequirement.Any),
