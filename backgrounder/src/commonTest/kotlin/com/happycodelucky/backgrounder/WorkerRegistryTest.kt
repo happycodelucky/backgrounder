@@ -4,6 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotSame
+import kotlin.test.assertSame
 
 class WorkerRegistryTest {
     private val syncId = TaskId("com.happycodelucky.backgrounder.test.sync")
@@ -15,6 +16,21 @@ class WorkerRegistryTest {
         object : BackgroundWorker {
             override suspend fun execute(context: WorkerContext): WorkResult = WorkResult.Success
         }
+
+    // A factory that owns [ownedIds] and builds a worker for each. [overrides]
+    // lets a test force a specific worker (or null) for an id.
+    private class StubFactory(
+        override val taskIds: Set<TaskId>,
+        private val overrides: Map<TaskId, BackgroundWorker?> = emptyMap(),
+        private val build: () -> BackgroundWorker,
+    ) : BackgroundWorkerFactory {
+        override fun create(taskId: TaskId): BackgroundWorker? =
+            when {
+                taskId in overrides -> overrides[taskId]
+                taskId in taskIds -> build()
+                else -> null
+            }
+    }
 
     @Test
     fun registerThenCreateReturnsAFreshInstance() {
@@ -63,5 +79,105 @@ class WorkerRegistryTest {
         // But existing factories still work post-seal.
         assertEquals(setOf(syncId), registry.registeredIds())
         registry.create(syncId) // does not throw
+    }
+
+    @Test
+    fun factoryResolvesItsOwnedIds() {
+        val registry = WorkerRegistry()
+        registry.register(StubFactory(setOf(syncId, uploadId)) { newWorker() })
+
+        val a = registry.create(syncId)
+        val b = registry.create(uploadId)
+        assertNotSame(a, b)
+    }
+
+    @Test
+    fun registeredIdsUnionsPerIdAndFactoryIds() {
+        val otherId = TaskId("com.happycodelucky.backgrounder.test.other")
+        val registry = WorkerRegistry()
+        registry.register(syncId) { newWorker() }
+        registry.register(StubFactory(setOf(uploadId, otherId)) { newWorker() })
+
+        assertEquals(setOf(syncId, uploadId, otherId), registry.registeredIds())
+    }
+
+    @Test
+    fun perIdRegistrationWinsOverFactory() {
+        val registry = WorkerRegistry()
+        // Register the per-id worker first; the factory does not declare syncId,
+        // so there is no collision — but resolution must still hit the per-id path.
+        val perIdWorker = newWorker()
+        registry.register(syncId) { perIdWorker }
+        registry.register(StubFactory(setOf(uploadId)) { newWorker() })
+
+        assertSame(perIdWorker, registry.create(syncId))
+    }
+
+    @Test
+    fun factoriesResolveInRegistrationOrder() {
+        val registry = WorkerRegistry()
+        val first = newWorker()
+        val second = newWorker()
+        // Two factories, disjoint id sets — each resolves only its own id.
+        registry.register(StubFactory(setOf(syncId)) { first })
+        registry.register(StubFactory(setOf(uploadId)) { second })
+
+        assertSame(first, registry.create(syncId))
+        assertSame(second, registry.create(uploadId))
+    }
+
+    @Test
+    fun factoryCollidingWithPerIdRegistrationThrows() {
+        val registry = WorkerRegistry()
+        registry.register(syncId) { newWorker() }
+        assertFailsWith<IllegalArgumentException> {
+            registry.register(StubFactory(setOf(syncId)) { newWorker() })
+        }
+    }
+
+    @Test
+    fun perIdRegistrationCollidingWithFactoryThrows() {
+        val registry = WorkerRegistry()
+        registry.register(StubFactory(setOf(syncId)) { newWorker() })
+        assertFailsWith<IllegalArgumentException> {
+            registry.register(syncId) { newWorker() }
+        }
+    }
+
+    @Test
+    fun overlappingFactoriesThrow() {
+        val registry = WorkerRegistry()
+        registry.register(StubFactory(setOf(syncId, uploadId)) { newWorker() })
+        assertFailsWith<IllegalArgumentException> {
+            registry.register(StubFactory(setOf(uploadId)) { newWorker() })
+        }
+    }
+
+    @Test
+    fun emptyFactoryThrows() {
+        val registry = WorkerRegistry()
+        assertFailsWith<IllegalArgumentException> {
+            registry.register(StubFactory(emptySet()) { newWorker() })
+        }
+    }
+
+    @Test
+    fun factoryDecliningDeclaredIdThrows() {
+        val registry = WorkerRegistry()
+        registry.register(
+            StubFactory(setOf(syncId), overrides = mapOf(syncId to null)) { newWorker() },
+        )
+        assertFailsWith<WorkerRegistry.FactoryDeclinedException> {
+            registry.create(syncId)
+        }
+    }
+
+    @Test
+    fun sealRejectsFactoryRegistration() {
+        val registry = WorkerRegistry()
+        registry.seal()
+        assertFailsWith<IllegalStateException> {
+            registry.register(StubFactory(setOf(syncId)) { newWorker() })
+        }
     }
 }

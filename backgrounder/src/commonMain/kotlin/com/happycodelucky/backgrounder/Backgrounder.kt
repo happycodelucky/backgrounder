@@ -63,6 +63,25 @@ public class Backgrounder internal constructor(
     }
 
     /**
+     * Register a [BackgroundWorkerFactory] that owns many [TaskId]s at once.
+     * Must be called before [start]. Throws if [start] has already run, or
+     * any of the factory's [BackgroundWorkerFactory.taskIds] collide with an
+     * existing per-id registration or another factory.
+     *
+     * This is the bulk alternative to per-id [register] — one factory object,
+     * many ids, lazy worker resolution. See [BackgroundWorkerFactory] for the
+     * `taskIds` / `create` sync contract.
+     *
+     * @throws IllegalStateException if [start] has already run.
+     * @throws IllegalArgumentException if any of the factory's ids is already registered.
+     */
+    @ObjCName(swiftName = "register")
+    @Throws(IllegalStateException::class, IllegalArgumentException::class)
+    public fun register(factory: BackgroundWorkerFactory) {
+        core.registry.register(factory)
+    }
+
+    /**
      * Finalize initialization. After this call:
      *   - the registry is sealed; further [register] calls throw;
      *   - iOS / macOS perform the ephemeral sweep and register OS handlers;
