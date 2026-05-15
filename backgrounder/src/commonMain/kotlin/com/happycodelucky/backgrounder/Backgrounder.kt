@@ -33,7 +33,7 @@ import kotlin.native.ObjCName
 @OptIn(ExperimentalObjCName::class)
 @ObjCName(swiftName = "Backgrounder")
 public class Backgrounder internal constructor(
-    private val core: BackgrounderCore,
+    private val engine: BackgrounderEngine,
 ) {
     /**
      * Register a [BackgroundWorker] factory for [taskId]. Must be called
@@ -53,7 +53,7 @@ public class Backgrounder internal constructor(
         taskId: TaskId,
         factory: () -> BackgroundWorker,
     ) {
-        core.registry.register(taskId, factory)
+        engine.registry.register(taskId, factory)
     }
 
     /**
@@ -72,7 +72,7 @@ public class Backgrounder internal constructor(
     @ObjCName(swiftName = "register")
     @Throws(IllegalStateException::class, IllegalArgumentException::class)
     public fun register(factory: BackgroundWorkerFactory) {
-        core.registry.register(factory)
+        engine.registry.register(factory)
     }
 
     /**
@@ -86,7 +86,7 @@ public class Backgrounder internal constructor(
      */
     @ObjCName(swiftName = "start")
     public fun start() {
-        core.start()
+        engine.start()
     }
 
     /**
@@ -100,7 +100,7 @@ public class Backgrounder internal constructor(
     public fun schedule(
         request: WorkRequest,
         policy: ConflictPolicy = ConflictPolicy.Replace,
-    ): ScheduleOutcome = core.scheduler.schedule(request, policy)
+    ): ScheduleOutcome = engine.scheduler.schedule(request, policy)
 
     /**
      * Cancel every pending scheduled request the library knows about.
@@ -110,7 +110,7 @@ public class Backgrounder internal constructor(
      * [runNow] calls for a single id, use [cancel].
      */
     @ObjCName(swiftName = "cancelAll")
-    public fun cancelAll(): CancelOutcome = core.scheduler.cancelAll()
+    public fun cancelAll(): CancelOutcome = engine.scheduler.cancelAll()
 
     /**
      * Snapshot of currently-scheduled (pending or running) tasks the library
@@ -121,11 +121,11 @@ public class Backgrounder internal constructor(
      * `CancellationError` machinery (CLAUDE.md §8).
      */
     @ObjCName(swiftName = "scheduled")
-    public suspend fun scheduled(): List<ScheduledTask> = core.scheduler.scheduled()
+    public suspend fun scheduled(): List<ScheduledTask> = engine.scheduler.scheduled()
 
     /** What this platform's scheduler actually guarantees. */
     @ObjCName(swiftName = "guarantees")
-    public fun guarantees(): SchedulerGuarantees = core.scheduler.guarantees()
+    public fun guarantees(): SchedulerGuarantees = engine.scheduler.guarantees()
 
     /**
      * Run [task] immediately under [taskId] and suspend until it completes,
@@ -175,14 +175,14 @@ public class Backgrounder internal constructor(
         taskId: TaskId,
         task: suspend () -> R,
     ): R {
-        check(core.isStarted) {
+        check(engine.isStarted) {
             "Backgrounder.runNow($taskId): start() has not been called yet."
         }
         // Pre-empt anything else for this id (in-flight runNow, pending schedule,
         // in-flight scheduled worker). The prior runNow caller — if any — sees
         // CancellationException from their await.
         cancel(taskId)
-        return core.instantRunner.run(taskId, task)
+        return engine.instantRunner.run(taskId, task)
     }
 
     /**
@@ -208,8 +208,8 @@ public class Backgrounder internal constructor(
      */
     @ObjCName(swiftName = "cancel")
     public fun cancel(taskId: TaskId): CancelOutcome {
-        val schedulerOutcome = core.scheduler.cancel(taskId)
-        val cancelledRunNow = core.instantRunner.cancelInFlight(taskId)
+        val schedulerOutcome = engine.scheduler.cancel(taskId)
+        val cancelledRunNow = engine.instantRunner.cancelInFlight(taskId)
         return when (schedulerOutcome) {
             is CancelOutcome.Cancelled -> {
                 schedulerOutcome
@@ -237,7 +237,7 @@ public class Backgrounder internal constructor(
      */
     @ObjCName(swiftName = "shutdown")
     public fun shutdown() {
-        core.shutdown()
+        engine.shutdown()
     }
 
     /**

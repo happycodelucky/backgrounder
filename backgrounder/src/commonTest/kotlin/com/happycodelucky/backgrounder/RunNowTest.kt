@@ -17,7 +17,7 @@ import kotlin.test.assertTrue
 /**
  * Common-side tests for `Backgrounder.runNow` and `Backgrounder.cancel`.
  *
- * Uses a hand-built [BackgrounderCore] with a [FakeScheduler] and a
+ * Uses a hand-built [BackgrounderEngine] with a [FakeScheduler] and a
  * [FakeInstantRunner] — exercises the pure [Backgrounder] glue (start gate,
  * pre-emption forwarding, cancel merge logic) without any platform plumbing.
  */
@@ -31,7 +31,7 @@ class RunNowTest {
         val runner = FakeInstantRunner()
         val backgrounder =
             Backgrounder(
-                BackgrounderCore(
+                BackgrounderEngine(
                     registry = WorkerRegistry(),
                     scheduler = scheduler,
                     instantRunner = runner,

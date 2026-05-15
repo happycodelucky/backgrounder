@@ -4,7 +4,7 @@
 package com.happycodelucky.backgrounder.macos
 
 import com.happycodelucky.backgrounder.Backgrounder
-import com.happycodelucky.backgrounder.BackgrounderCore
+import com.happycodelucky.backgrounder.BackgrounderEngine
 import com.happycodelucky.backgrounder.BackgrounderEventListener
 import com.happycodelucky.backgrounder.EphemeralRegistry
 import com.happycodelucky.backgrounder.PendingInstantCalls
@@ -64,7 +64,7 @@ internal object MacOSBackgrounderBuilder {
         val instantRunner = LibraryScopeInstantRunner(pendingInstantCalls)
 
         return Backgrounder(
-            BackgrounderCore(
+            BackgrounderEngine(
                 registry = registry,
                 scheduler = scheduler,
                 instantRunner = instantRunner,

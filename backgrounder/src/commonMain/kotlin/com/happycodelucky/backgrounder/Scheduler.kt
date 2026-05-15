@@ -9,7 +9,7 @@ import kotlin.native.ObjCName
  * Not part of the public API — the scheduling verbs are promoted directly
  * onto [Backgrounder] ([Backgrounder.schedule], [Backgrounder.cancelAll],
  * [Backgrounder.scheduled], [Backgrounder.guarantees]). This interface is the
- * internal seam the per-platform actuals implement and [BackgrounderCore]
+ * internal seam the per-platform actuals implement and [BackgrounderEngine]
  * delegates to.
  *
  * Platform actuals:

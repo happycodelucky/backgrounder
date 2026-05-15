@@ -4,7 +4,7 @@ import android.app.Application
 import android.content.Context
 import androidx.work.WorkManager
 import com.happycodelucky.backgrounder.Backgrounder
-import com.happycodelucky.backgrounder.BackgrounderCore
+import com.happycodelucky.backgrounder.BackgrounderEngine
 import com.happycodelucky.backgrounder.BackgrounderEventListener
 import com.happycodelucky.backgrounder.EphemeralRegistry
 import com.happycodelucky.backgrounder.PendingInstantCalls
@@ -82,7 +82,7 @@ internal object AndroidBackgrounderBuilder {
 
         val backgrounder =
             Backgrounder(
-                BackgrounderCore(
+                BackgrounderEngine(
                     registry = registry,
                     scheduler = scheduler,
                     instantRunner = instantRunner,
