@@ -7,6 +7,7 @@ import com.happycodelucky.backgrounder.Backgrounder
 import com.happycodelucky.backgrounder.BackgrounderEngine
 import com.happycodelucky.backgrounder.BackgrounderEventListener
 import com.happycodelucky.backgrounder.EphemeralRegistry
+import com.happycodelucky.backgrounder.MonitorEventEmitter
 import com.happycodelucky.backgrounder.PendingInstantCalls
 import com.happycodelucky.backgrounder.ReachabilityGate
 import com.happycodelucky.backgrounder.WorkerRegistry
@@ -68,6 +69,7 @@ internal object MacOSBackgrounderBuilder {
                 registry = registry,
                 scheduler = scheduler,
                 instantRunner = instantRunner,
+                emitter = MonitorEventEmitter(eventListener),
                 onStart = {
                     // macOS has no OS-level "registered task ids" concept; the
                     // ephemeral sweep just clears our mirror. (Plan §2.2.)

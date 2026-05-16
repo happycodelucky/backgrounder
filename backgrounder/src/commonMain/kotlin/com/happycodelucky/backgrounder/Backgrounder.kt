@@ -1,5 +1,6 @@
 package com.happycodelucky.backgrounder
 
+import kotlinx.coroutines.flow.SharedFlow
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
@@ -124,6 +125,28 @@ public class Backgrounder internal constructor(
     /** What this platform's scheduler actually guarantees. */
     @ObjCName(swiftName = "guarantees")
     public fun guarantees(): SchedulerGuarantees = engine.scheduler.guarantees()
+
+    /**
+     * Hot stream of [MonitorEvent]s — every schedule, dispatch, deferral,
+     * completion, retry, cancellation, and library-internal error the
+     * scheduler observes.
+     *
+     * Swift sees this as `AsyncSequence<MonitorEvent>` via SKIE. Iterate with
+     * `for await event in backgrounder.events() { switch onEnum(of: event)
+     * { … } }` for exhaustive case handling.
+     *
+     * **Semantics.** Hot, non-replaying — late collectors do not see history.
+     * Backed by a `MutableSharedFlow(replay = 0, extraBufferCapacity = 64,
+     * onBufferOverflow = DROP_OLDEST)`; sustained back-pressure drops the
+     * oldest unread events first. Emit is non-suspending so a slow collector
+     * cannot pin scheduler dispatch (CLAUDE.md §3).
+     *
+     * For the imperative callback alternative covering the four v1 events
+     * only, see [BackgrounderEventListener]. Both channels are fed from the
+     * same internal emit point and stay in lockstep.
+     */
+    @ObjCName(swiftName = "events")
+    public fun events(): SharedFlow<MonitorEvent> = engine.events
 
     /**
      * Run [task] immediately under [taskId] and suspend until it completes,

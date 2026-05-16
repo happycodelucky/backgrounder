@@ -7,6 +7,7 @@ import com.happycodelucky.backgrounder.Backgrounder
 import com.happycodelucky.backgrounder.BackgrounderEngine
 import com.happycodelucky.backgrounder.BackgrounderEventListener
 import com.happycodelucky.backgrounder.EphemeralRegistry
+import com.happycodelucky.backgrounder.MonitorEventEmitter
 import com.happycodelucky.backgrounder.PendingInstantCalls
 import com.happycodelucky.backgrounder.WorkerRegistry
 import com.russhwolf.settings.SharedPreferencesSettings
@@ -86,6 +87,7 @@ internal object AndroidBackgrounderBuilder {
                     registry = registry,
                     scheduler = scheduler,
                     instantRunner = instantRunner,
+                    emitter = MonitorEventEmitter(eventListener),
                     onStart = {
                         // Plan §1.1: `start()` flips the ready gate so workers
                         // that were enqueued (but blocked by the

@@ -7,6 +7,7 @@ import com.happycodelucky.backgrounder.Backgrounder
 import com.happycodelucky.backgrounder.BackgrounderEngine
 import com.happycodelucky.backgrounder.BackgrounderEventListener
 import com.happycodelucky.backgrounder.EphemeralRegistry
+import com.happycodelucky.backgrounder.MonitorEventEmitter
 import com.happycodelucky.backgrounder.PendingInstantCalls
 import com.happycodelucky.backgrounder.ReachabilityGate
 import com.happycodelucky.backgrounder.WorkerRegistry
@@ -134,6 +135,7 @@ internal object IOSBackgrounderBuilder {
                 registry = registry,
                 scheduler = scheduler,
                 instantRunner = instantRunner,
+                emitter = MonitorEventEmitter(eventListener),
                 onStart = {
                     // Sweep first (clears ephemeral state before any handler fires),
                     // then registration (registers OS handlers, validates plist,

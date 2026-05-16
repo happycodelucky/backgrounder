@@ -35,6 +35,7 @@ class RunNowTest {
                     registry = WorkerRegistry(),
                     scheduler = scheduler,
                     instantRunner = runner,
+                    emitter = MonitorEventEmitter(BackgrounderEventListener.Noop),
                     onStart = {},
                     onShutdown = {},
                 ),
