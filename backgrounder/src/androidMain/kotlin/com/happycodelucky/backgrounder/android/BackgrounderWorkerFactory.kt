@@ -4,14 +4,14 @@ import android.content.Context
 import androidx.work.ListenableWorker
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
-import com.happycodelucky.backgrounder.BackgrounderEventListener
+import com.happycodelucky.backgrounder.MonitorEventEmitter
 import com.happycodelucky.backgrounder.PendingInstantCalls
 import com.happycodelucky.backgrounder.WorkerRegistry
 
 /**
  * Hand-rolled `WorkerFactory` that constructs [RegistryDispatchWorker] with
  * the runtime dependencies it needs (a [WorkerRegistry] and a
- * [BackgrounderEventListener]) — replaces `koin-androidx-workmanager`'s
+ * [MonitorEventEmitter]) — replaces `koin-androidx-workmanager`'s
  * `KoinWorkerFactory` (plan §"DI-free initialization" §2.3).
  *
  * Returns `null` for any other worker class so `DelegatingWorkerFactory` can
@@ -24,7 +24,7 @@ import com.happycodelucky.backgrounder.WorkerRegistry
  */
 internal class BackgrounderWorkerFactory(
     private val registry: WorkerRegistry,
-    private val eventListener: BackgrounderEventListener,
+    private val emitter: MonitorEventEmitter,
     private val readyGate: kotlinx.atomicfu.AtomicBoolean,
     private val pendingInstantCalls: PendingInstantCalls,
 ) : WorkerFactory() {
@@ -40,7 +40,7 @@ internal class BackgrounderWorkerFactory(
         // load the class on every dispatch which we don't need.
         return when (workerClassName) {
             RegistryDispatchWorker::class.java.name -> {
-                RegistryDispatchWorker(appContext, workerParameters, registry, eventListener, readyGate)
+                RegistryDispatchWorker(appContext, workerParameters, registry, emitter, readyGate)
             }
 
             InstantDispatchWorker::class.java.name -> {

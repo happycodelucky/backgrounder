@@ -118,6 +118,7 @@ nav:
     - recipes/worker-factory.md
     - recipes/cancel.md
     - recipes/inspect.md
+    - recipes/monitor.md
     - recipes/input.md
     - recipes/network-required.md
     - recipes/retry-backoff.md

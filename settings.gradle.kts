@@ -46,3 +46,4 @@ dependencyResolutionManagement {
 rootProject.name = "backgrounder"
 
 include(":backgrounder")
+include(":background-monitor")

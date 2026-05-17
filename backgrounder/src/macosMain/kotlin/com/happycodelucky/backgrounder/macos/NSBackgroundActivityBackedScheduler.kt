@@ -5,16 +5,22 @@
 package com.happycodelucky.backgrounder.macos
 
 import co.touchlab.kermit.Logger
-import com.happycodelucky.backgrounder.BackgrounderEventListener
+import com.happycodelucky.backgrounder.AttemptFailureReason
 import com.happycodelucky.backgrounder.CancelOutcome
+import com.happycodelucky.backgrounder.CancelSource
 import com.happycodelucky.backgrounder.ConflictPolicy
+import com.happycodelucky.backgrounder.DeferralReason
 import com.happycodelucky.backgrounder.EphemeralRegistry
+import com.happycodelucky.backgrounder.MonitorEvent
+import com.happycodelucky.backgrounder.MonitorEventEmitter
+import com.happycodelucky.backgrounder.PendingPredicate
 import com.happycodelucky.backgrounder.PlatformCapabilities
 import com.happycodelucky.backgrounder.ReachabilityGate
 import com.happycodelucky.backgrounder.ScheduleOutcome
 import com.happycodelucky.backgrounder.ScheduledTask
 import com.happycodelucky.backgrounder.Scheduler
 import com.happycodelucky.backgrounder.SchedulerGuarantees
+import com.happycodelucky.backgrounder.SkipReason
 import com.happycodelucky.backgrounder.TaskId
 import com.happycodelucky.backgrounder.WorkRequest
 import com.happycodelucky.backgrounder.WorkResult
@@ -52,7 +58,7 @@ import kotlin.time.Instant
 internal class NSBackgroundActivityBackedScheduler(
     private val registry: WorkerRegistry,
     private val ephemeral: EphemeralRegistry,
-    private val eventListener: BackgrounderEventListener,
+    private val emitter: MonitorEventEmitter,
     private val gate: ReachabilityGate,
 ) : Scheduler {
     private val log = Logger.withTag("Backgrounder/macOS/Scheduler")
@@ -97,8 +103,33 @@ internal class NSBackgroundActivityBackedScheduler(
             return ScheduleOutcome.Scheduled
         }
 
+        // Replace policy displacing an existing activity → ScheduleReplaced
+        // before Scheduled. Probe outside the lock; the synchronized block
+        // below holds the authoritative view, but emitting the event there
+        // would put a tryEmit inside a critical section unnecessarily.
+        val replacing =
+            synchronized(lock) {
+                policy == ConflictPolicy.Replace && activities[request.taskId] != null
+            }
+        if (replacing) {
+            emitter.emit(
+                MonitorEvent.ScheduleReplaced(
+                    taskId = request.taskId,
+                    at = Clock.System.now(),
+                    policy = policy,
+                    current = request,
+                ),
+            )
+        }
+
         if (request.ephemeral) ephemeral.add(request.taskId)
-        eventListener.onScheduled(request.taskId, request)
+        emitter.emit(
+            MonitorEvent.Scheduled(
+                taskId = request.taskId,
+                at = Clock.System.now(),
+                request = request,
+            ),
+        )
 
         return synchronized(lock) {
             // Re-check under the lock — a concurrent `schedule(...)` may have raced
@@ -160,13 +191,43 @@ internal class NSBackgroundActivityBackedScheduler(
             // appropriate NSBackgroundActivityResult.
             scope.launch {
                 val attempt = synchronized(lock) { attempts[request.taskId] ?: 0 }
-                eventListener.onStarted(request.taskId, attempt)
+                val startedAt = Clock.System.now()
+                emitter.emit(
+                    MonitorEvent.WorkStarted(
+                        taskId = request.taskId,
+                        at = startedAt,
+                        attempt = attempt,
+                        // NSBackgroundActivityScheduler doesn't surface an
+                        // "expected at" wall-clock; the request's interval is
+                        // the only hint and is relative to last fire.
+                        expectedAt = null,
+                    ),
+                )
 
                 val worker =
                     try {
                         registry.create(request.taskId)
                     } catch (e: WorkerRegistry.NoFactoryRegisteredException) {
                         log.e(e) { "[${request.taskId}] no factory registered" }
+                        emitter.emit(
+                            MonitorEvent.Skipped(
+                                taskId = request.taskId,
+                                at = Clock.System.now(),
+                                reason = SkipReason.NotRegistered,
+                            ),
+                        )
+                        completion?.invoke(NSBackgroundActivityResultFinished)
+                        return@launch
+                    } catch (t: Throwable) {
+                        log.e(t) { "[${request.taskId}] factory threw" }
+                        emitter.emit(
+                            MonitorEvent.AttemptFailed(
+                                taskId = request.taskId,
+                                at = Clock.System.now(),
+                                attempt = attempt,
+                                reason = AttemptFailureReason.FactoryThrew(t),
+                            ),
+                        )
                         completion?.invoke(NSBackgroundActivityResultFinished)
                         return@launch
                     }
@@ -203,6 +264,18 @@ internal class NSBackgroundActivityBackedScheduler(
                                 "(requirement=${request.constraints.networkRequired}, budget=$gateBudget); " +
                                 "skipping worker, deferring as Retry"
                         }
+                        emitter.emit(
+                            MonitorEvent.AttemptDeferred(
+                                taskId = request.taskId,
+                                at = Clock.System.now(),
+                                attempt = attempt,
+                                reason =
+                                    DeferralReason.ReachabilityTimeout(
+                                        requirement = request.constraints.networkRequired,
+                                        budget = gateBudget,
+                                    ),
+                            ),
+                        )
                         WorkResult.Retry
                     } else {
                         try {
@@ -212,11 +285,28 @@ internal class NSBackgroundActivityBackedScheduler(
                             throw e
                         } catch (t: Throwable) {
                             log.e(t) { "[${request.taskId}] threw; treating as Retry" }
+                            emitter.emit(
+                                MonitorEvent.AttemptFailed(
+                                    taskId = request.taskId,
+                                    at = Clock.System.now(),
+                                    attempt = attempt,
+                                    reason = AttemptFailureReason.WorkerThrew(t),
+                                ),
+                            )
                             WorkResult.Retry
                         }
                     }
 
-                eventListener.onCompleted(request.taskId, attempt, result)
+                val completedAt = Clock.System.now()
+                emitter.emit(
+                    MonitorEvent.WorkCompleted(
+                        taskId = request.taskId,
+                        at = completedAt,
+                        attempt = attempt,
+                        result = result,
+                        runtime = completedAt - startedAt,
+                    ),
+                )
 
                 synchronized(lock) {
                     attempts[request.taskId] =
@@ -286,8 +376,20 @@ internal class NSBackgroundActivityBackedScheduler(
 
         // delayFor(attempt) — the attempt that *just failed* — matches Android's
         // WorkManager backoff curve and the iOS resubmit math.
-        val delaySeconds = (backoff.delayFor(attempt).inWholeMilliseconds / 1000.0).coerceAtLeast(1.0)
+        val delay = backoff.delayFor(attempt)
+        val delaySeconds = (delay.inWholeMilliseconds / 1000.0).coerceAtLeast(1.0)
         log.i { "[${request.taskId}] one-shot Retry; resubmitting in ${delaySeconds}s (attempt=$nextAttempt)" }
+
+        val now = Clock.System.now()
+        emitter.emit(
+            MonitorEvent.RetryScheduled(
+                taskId = request.taskId,
+                at = now,
+                nextAttempt = nextAttempt,
+                delay = delay,
+                nextRunHint = now + delay,
+            ),
+        )
 
         synchronized(lock) {
             // Invalidate the current activity *before* scheduling the fresh one so the
@@ -310,41 +412,69 @@ internal class NSBackgroundActivityBackedScheduler(
         return NSBackgroundActivityResultFinished
     }
 
-    override fun cancel(taskId: TaskId): CancelOutcome =
-        synchronized(lock) {
-            val activity = activities.remove(taskId) ?: return@synchronized CancelOutcome.NoSuchTask
-            activity.invalidate()
-            attempts.remove(taskId)
-            kinds.remove(taskId)
-            ephemeral.remove(taskId)
-            eventListener.onCancelled(taskId)
-            CancelOutcome.Cancelled(pendingCleared = 1)
-        }
+    override fun cancel(taskId: TaskId): CancelOutcome {
+        val cancelled =
+            synchronized(lock) {
+                val activity = activities.remove(taskId) ?: return@synchronized false
+                activity.invalidate()
+                attempts.remove(taskId)
+                kinds.remove(taskId)
+                ephemeral.remove(taskId)
+                true
+            }
+        if (!cancelled) return CancelOutcome.NoSuchTask
+        emitter.emit(
+            MonitorEvent.Cancelled(
+                taskId = taskId,
+                at = Clock.System.now(),
+                source = CancelSource.User,
+            ),
+        )
+        return CancelOutcome.Cancelled(pendingCleared = 1)
+    }
 
-    override fun cancelAll(): CancelOutcome =
-        synchronized(lock) {
-            if (activities.isEmpty()) return@synchronized CancelOutcome.NoSuchTask
-            val ids = activities.keys.toList()
-            activities.values.forEach { it.invalidate() }
-            activities.clear()
-            attempts.clear()
-            kinds.clear()
-            ephemeral.clear()
-            ids.forEach(eventListener::onCancelled)
-            CancelOutcome.Cancelled(pendingCleared = ids.size)
+    override fun cancelAll(): CancelOutcome {
+        val ids =
+            synchronized(lock) {
+                if (activities.isEmpty()) return@synchronized emptyList<TaskId>()
+                val snap = activities.keys.toList()
+                activities.values.forEach { it.invalidate() }
+                activities.clear()
+                attempts.clear()
+                kinds.clear()
+                ephemeral.clear()
+                snap
+            }
+        if (ids.isEmpty()) return CancelOutcome.NoSuchTask
+        val now = Clock.System.now()
+        ids.forEach { id ->
+            emitter.emit(MonitorEvent.Cancelled(taskId = id, at = now, source = CancelSource.User))
         }
+        return CancelOutcome.Cancelled(pendingCleared = ids.size)
+    }
 
     override suspend fun scheduled(): List<ScheduledTask> =
         synchronized(lock) {
             activities.keys.map { id ->
                 val attempt = attempts[id] ?: 0
+                val state0 = if (attempt > 0) ScheduledTask.State.Backoff else ScheduledTask.State.Pending
                 ScheduledTask(
                     taskId = id,
                     kind = kinds[id] ?: ScheduledTask.Kind.OneTime,
-                    state = if (attempt > 0) ScheduledTask.State.Backoff else ScheduledTask.State.Pending,
+                    state = state0,
                     nextRunHint = null,
                     attempt = attempt,
                     ephemeral = false, // Ephemeral state is tracked in EphemeralRegistry; surface there if needed.
+                    // macOS doesn't retain the original WorkConstraints once
+                    // the NSBackgroundActivityScheduler is built — the only
+                    // dispatch-blocking condition we can observe is the
+                    // backoff window when a previous attempt returned Retry.
+                    pendingPredicates =
+                        if (state0 == ScheduledTask.State.Backoff) {
+                            listOf(PendingPredicate.WaitingForBackoff(until = null))
+                        } else {
+                            emptyList()
+                        },
                 )
             }
         }

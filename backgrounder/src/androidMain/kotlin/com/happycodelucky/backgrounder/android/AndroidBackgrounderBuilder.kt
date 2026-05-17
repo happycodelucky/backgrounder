@@ -7,6 +7,7 @@ import com.happycodelucky.backgrounder.Backgrounder
 import com.happycodelucky.backgrounder.BackgrounderEngine
 import com.happycodelucky.backgrounder.BackgrounderEventListener
 import com.happycodelucky.backgrounder.EphemeralRegistry
+import com.happycodelucky.backgrounder.MonitorEventEmitter
 import com.happycodelucky.backgrounder.PendingInstantCalls
 import com.happycodelucky.backgrounder.WorkerRegistry
 import com.russhwolf.settings.SharedPreferencesSettings
@@ -62,12 +63,19 @@ internal object AndroidBackgrounderBuilder {
         // calls `getInstance`. Resolve at use-time instead.
         val workManagerProvider: () -> WorkManager = { suppliedWorkManager ?: WorkManager.getInstance(application) }
 
+        // Single emitter — shared between the WorkManager-side scheduler and
+        // the per-dispatch RegistryDispatchWorker (via the factory) so every
+        // emit site funnels through one fan-out point. The four v1 listener
+        // callbacks are dispatched from inside the emitter; richer
+        // MonitorEvent cases land only on the SharedFlow.
+        val emitter = MonitorEventEmitter(eventListener)
+
         val scheduledTaskQuery = AndroidScheduledTaskQuery(workManagerProvider, ephemeral)
         val scheduler =
             WorkManagerScheduler(
                 workManagerProvider = workManagerProvider,
                 ephemeral = ephemeral,
-                eventListener = eventListener,
+                emitter = emitter,
                 scheduledTaskQuery = scheduledTaskQuery,
             )
 
@@ -78,7 +86,7 @@ internal object AndroidBackgrounderBuilder {
         val pendingInstantCalls = PendingInstantCalls()
         val instantRunner = WorkManagerInstantRunner(workManagerProvider, pendingInstantCalls)
 
-        val factory = BackgrounderWorkerFactory(registry, eventListener, readyGate, pendingInstantCalls)
+        val factory = BackgrounderWorkerFactory(registry, emitter, readyGate, pendingInstantCalls)
 
         val backgrounder =
             Backgrounder(
@@ -86,6 +94,7 @@ internal object AndroidBackgrounderBuilder {
                     registry = registry,
                     scheduler = scheduler,
                     instantRunner = instantRunner,
+                    emitter = emitter,
                     onStart = {
                         // Plan §1.1: `start()` flips the ready gate so workers
                         // that were enqueued (but blocked by the
@@ -98,7 +107,7 @@ internal object AndroidBackgrounderBuilder {
                     },
                 ),
             )
-        AndroidBackgrounderInternals.attach(backgrounder, factory)
+        AndroidBackgrounderInternals.attach(backgrounder, factory, application, registry)
         return backgrounder
     }
 }

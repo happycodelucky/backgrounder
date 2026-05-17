@@ -7,6 +7,7 @@ import com.happycodelucky.backgrounder.Backgrounder
 import com.happycodelucky.backgrounder.BackgrounderEngine
 import com.happycodelucky.backgrounder.BackgrounderEventListener
 import com.happycodelucky.backgrounder.EphemeralRegistry
+import com.happycodelucky.backgrounder.MonitorEventEmitter
 import com.happycodelucky.backgrounder.PendingInstantCalls
 import com.happycodelucky.backgrounder.ReachabilityGate
 import com.happycodelucky.backgrounder.WorkerRegistry
@@ -48,11 +49,15 @@ internal object MacOSBackgrounderBuilder {
         val gate = ReachabilityGate(Reachability.shared)
         Reachability.shared.isReachable // discarded — read is the warmup side-effect
 
+        // Shared emitter — feeds both the v1 listener (for the four v1-shape
+        // events) and the SharedFlow exposed via Backgrounder.events().
+        val emitter = MonitorEventEmitter(eventListener)
+
         val scheduler =
             NSBackgroundActivityBackedScheduler(
                 registry = registry,
                 ephemeral = ephemeral,
-                eventListener = eventListener,
+                emitter = emitter,
                 gate = gate,
             )
 
@@ -68,6 +73,7 @@ internal object MacOSBackgrounderBuilder {
                 registry = registry,
                 scheduler = scheduler,
                 instantRunner = instantRunner,
+                emitter = emitter,
                 onStart = {
                     // macOS has no OS-level "registered task ids" concept; the
                     // ephemeral sweep just clears our mirror. (Plan §2.2.)

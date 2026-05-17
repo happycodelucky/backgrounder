@@ -1,8 +1,12 @@
 package com.happycodelucky.backgrounder.android
 
+import androidx.work.NetworkType
 import androidx.work.WorkInfo
+import com.happycodelucky.backgrounder.NetworkRequirement
+import com.happycodelucky.backgrounder.PendingPredicate
 import com.happycodelucky.backgrounder.ScheduledTask
 import com.happycodelucky.backgrounder.TaskId
+import kotlin.time.Clock
 import kotlin.time.Instant
 
 /**
@@ -61,19 +65,64 @@ internal object AndroidScheduledTaskMapper {
                 ?: return null
         val taskId = TaskId(taskIdString)
         val isPeriodic = view.tags.contains(KIND_PERIODIC_TAG)
+        val nextRunHint =
+            if (view.nextScheduleTimeMillis > 0L) {
+                Instant.fromEpochMilliseconds(view.nextScheduleTimeMillis)
+            } else {
+                null
+            }
+        val state = mapState(view.state, view.runAttemptCount)
         return ScheduledTask(
             taskId = taskId,
             kind = if (isPeriodic) ScheduledTask.Kind.Periodic else ScheduledTask.Kind.OneTime,
-            state = mapState(view.state, view.runAttemptCount),
-            nextRunHint =
-                if (view.nextScheduleTimeMillis > 0L) {
-                    Instant.fromEpochMilliseconds(view.nextScheduleTimeMillis)
-                } else {
-                    null
-                },
+            state = state,
+            nextRunHint = nextRunHint,
             attempt = view.runAttemptCount,
             ephemeral = taskId in ephemeralIds,
+            pendingPredicates = derivePredicates(view, state, nextRunHint),
         )
+    }
+
+    /**
+     * Pure mapper from [WorkInfoView] (incl. its `constraintsView`) to the
+     * list of predicates currently blocking dispatch.
+     */
+    private fun derivePredicates(
+        view: WorkInfoView,
+        state: ScheduledTask.State,
+        nextRunHint: Instant?,
+    ): List<PendingPredicate> {
+        val result = mutableListOf<PendingPredicate>()
+        val c = view.constraintsView
+        if (c != null) {
+            when (c.networkType) {
+                NetworkType.NOT_REQUIRED -> Unit
+                NetworkType.CONNECTED ->
+                    result.add(PendingPredicate.NetworkRequired(NetworkRequirement.Any))
+                NetworkType.UNMETERED ->
+                    result.add(PendingPredicate.NetworkRequired(NetworkRequirement.Unmetered))
+                else ->
+                    // Other NetworkType values (NOT_ROAMING, METERED, TEMPORARILY_UNMETERED)
+                    // aren't expressible via the cross-platform NetworkRequirement enum;
+                    // surface them as "Any" rather than dropping silently.
+                    result.add(PendingPredicate.NetworkRequired(NetworkRequirement.Any))
+            }
+            if (c.requiresCharging) {
+                result.add(PendingPredicate.RequiresCharging)
+            }
+        }
+        if (nextRunHint != null && nextRunHint > Clock.System.now()) {
+            when (state) {
+                ScheduledTask.State.Backoff ->
+                    result.add(PendingPredicate.WaitingForBackoff(until = nextRunHint))
+                ScheduledTask.State.Pending ->
+                    result.add(PendingPredicate.WaitingForEarliestBeginDate(at = nextRunHint))
+                ScheduledTask.State.Running,
+                ScheduledTask.State.Blocked,
+                -> Unit
+            }
+        }
+        return result
     }
 
     /**
@@ -87,6 +136,14 @@ internal object AndroidScheduledTaskMapper {
         val state: WorkInfo.State,
         val runAttemptCount: Int,
         val nextScheduleTimeMillis: Long,
+        /**
+         * Projection of [WorkInfo.constraints] — only the two fields the
+         * cross-platform [PendingPredicate] surface can represent. `null`
+         * means the view came from a test that didn't supply constraint
+         * info; the mapper omits constraint predicates rather than
+         * defaulting to "no constraints" (which would emit a false negative).
+         */
+        val constraintsView: ConstraintsView? = null,
     ) {
         companion object {
             fun from(info: WorkInfo): WorkInfoView =
@@ -95,9 +152,20 @@ internal object AndroidScheduledTaskMapper {
                     state = info.state,
                     runAttemptCount = info.runAttemptCount,
                     nextScheduleTimeMillis = info.nextScheduleTimeMillis,
+                    constraintsView =
+                        ConstraintsView(
+                            networkType = info.constraints.requiredNetworkType,
+                            requiresCharging = info.constraints.requiresCharging(),
+                        ),
                 )
         }
     }
+
+    /** Constraints projection — see [WorkInfoView.constraintsView]. */
+    internal data class ConstraintsView(
+        val networkType: NetworkType,
+        val requiresCharging: Boolean,
+    )
 
     private fun mapState(
         state: WorkInfo.State,

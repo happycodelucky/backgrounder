@@ -4,14 +4,24 @@ import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 
 /**
- * Optional lifecycle hook for app-level metrics.
+ * Optional lifecycle hook for app-level metrics — the imperative,
+ * callback-shaped delivery channel for the four v1 events
+ * (`onScheduled` / `onStarted` / `onCompleted` / `onCancelled`).
  *
  * Kermit handles structured logging by default. This interface surfaces the
- * same events for "is iOS actually running my tasks?" dashboards. Implementations
- * **must not block or throw** — they're called inline on the dispatcher running
- * the worker.
+ * same events for "is iOS actually running my tasks?" dashboards.
+ * Implementations **must not block or throw** — they're called inline on the
+ * dispatcher running the worker.
  *
- * Wire one via the Koin module by binding `single<BackgrounderEventListener>`.
+ * **Prefer [Backgrounder.events] for new code.** The
+ * `SharedFlow<MonitorEvent>` exposed there carries the same four events plus
+ * the richer events the listener does not cover (deferral, skip, attempt
+ * failure cause, retry scheduling, library error, schedule replacement). Both
+ * channels are fed by a single internal emit point (see
+ * [MonitorEventEmitter]) so the listener and the flow stay in lockstep.
+ *
+ * Pass an implementation to the per-platform `Backgrounder.create(...)`
+ * factory; the default is [Noop].
  *
  * `@OptIn(ExperimentalObjCName::class)`: Swift-rename annotation so callbacks
  * read like Swift selectors at the iOS / macOS boundary (CLAUDE.md §8).

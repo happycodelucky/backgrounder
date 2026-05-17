@@ -1,11 +1,15 @@
 package com.happycodelucky.backgrounder.ios
 
 import co.touchlab.kermit.Logger
-import com.happycodelucky.backgrounder.BackgrounderEventListener
+import com.happycodelucky.backgrounder.AttemptFailureReason
 import com.happycodelucky.backgrounder.BackoffPolicy
+import com.happycodelucky.backgrounder.DeferralReason
 import com.happycodelucky.backgrounder.EphemeralRegistry
+import com.happycodelucky.backgrounder.MonitorEvent
+import com.happycodelucky.backgrounder.MonitorEventEmitter
 import com.happycodelucky.backgrounder.PlatformCapabilities
 import com.happycodelucky.backgrounder.ReachabilityGate
+import com.happycodelucky.backgrounder.SkipReason
 import com.happycodelucky.backgrounder.TaskId
 import com.happycodelucky.backgrounder.WorkResult
 import com.happycodelucky.backgrounder.WorkerContext
@@ -64,7 +68,7 @@ internal class IOSPeriodicDispatcher(
     private val registry: WorkerRegistry,
     @Suppress("unused") // reserved for ephemeral cleanup on terminal failure; not used in v1
     private val ephemeral: EphemeralRegistry,
-    private val eventListener: BackgrounderEventListener,
+    private val emitter: MonitorEventEmitter,
     private val gate: ReachabilityGate,
     // Injectable so tests can drive virtual time deterministically.
     private val clock: () -> Long = { Clock.System.now().toEpochMilliseconds() },
@@ -157,7 +161,15 @@ internal class IOSPeriodicDispatcher(
             // worker returns Retry, we override below.
             state.setNextRunEpochMs(taskId, now + intervalMs)
 
-            eventListener.onStarted(taskId, attempt)
+            val startedAt = Clock.System.now()
+            emitter.emit(
+                MonitorEvent.WorkStarted(
+                    taskId = taskId,
+                    at = startedAt,
+                    attempt = attempt,
+                    expectedAt = kotlin.time.Instant.fromEpochMilliseconds(now),
+                ),
+            )
             val ctx =
                 WorkerContext(
                     taskId = taskId,
@@ -184,25 +196,104 @@ internal class IOSPeriodicDispatcher(
                             "(requirement=$networkRequired, budget=$gateBudget); " +
                             "skipping worker, deferring as Retry"
                     }
+                    emitter.emit(
+                        MonitorEvent.AttemptDeferred(
+                            taskId = taskId,
+                            at = Clock.System.now(),
+                            attempt = attempt,
+                            reason =
+                                DeferralReason.ReachabilityTimeout(
+                                    requirement = networkRequired,
+                                    budget = gateBudget,
+                                ),
+                        ),
+                    )
                     WorkResult.Retry
                 } else {
                     try {
-                        registry.create(taskId).execute(ctx)
+                        val worker =
+                            try {
+                                registry.create(taskId)
+                            } catch (e: WorkerRegistry.NoFactoryRegisteredException) {
+                                emitter.emit(
+                                    MonitorEvent.Skipped(
+                                        taskId = taskId,
+                                        at = Clock.System.now(),
+                                        reason = SkipReason.NotRegistered,
+                                    ),
+                                )
+                                throw e
+                            } catch (t: Throwable) {
+                                emitter.emit(
+                                    MonitorEvent.AttemptFailed(
+                                        taskId = taskId,
+                                        at = Clock.System.now(),
+                                        attempt = attempt,
+                                        reason = AttemptFailureReason.FactoryThrew(t),
+                                    ),
+                                )
+                                throw t
+                            }
+                        worker.execute(ctx)
                     } catch (e: CancellationException) {
                         // Treat OS cancellation (BGTask expiration) the same as
                         // Retry — workers might have made partial progress; the
                         // attempt counter inches toward the backoff cap, the
                         // already-advanced nextRunEpochMs gets overridden below.
                         log.i { "$taskId cancelled (likely BGTask expiration): ${e.message}" }
+                        emitter.emit(
+                            MonitorEvent.AttemptFailed(
+                                taskId = taskId,
+                                at = Clock.System.now(),
+                                attempt = attempt,
+                                reason = AttemptFailureReason.ExpiredByOS,
+                            ),
+                        )
                         WorkResult.Retry
                     } catch (t: Throwable) {
                         log.e(t) { "$taskId execute() threw; treating as Retry" }
+                        emitter.emit(
+                            MonitorEvent.AttemptFailed(
+                                taskId = taskId,
+                                at = Clock.System.now(),
+                                attempt = attempt,
+                                reason = AttemptFailureReason.WorkerThrew(t),
+                            ),
+                        )
                         WorkResult.Retry
                     }
                 }
 
             applyResult(taskId, attempt, result, intervalMs, now)
-            eventListener.onCompleted(taskId, attempt, result)
+            val completedAt = Clock.System.now()
+            emitter.emit(
+                MonitorEvent.WorkCompleted(
+                    taskId = taskId,
+                    at = completedAt,
+                    attempt = attempt,
+                    result = result,
+                    runtime = completedAt - startedAt,
+                ),
+            )
+            // If we just scheduled a retry inside applyResult, emit RetryScheduled
+            // *after* WorkCompleted so observers see the natural order: the
+            // attempt finishes, then the library queues the next attempt.
+            if (result is WorkResult.Retry) {
+                val backoff = backoffPolicyForRetry(taskId)
+                val nextAttempt = attempt + 1
+                if (!IOSBackoffEmulation.shouldGiveUp(backoff, nextAttempt)) {
+                    val nextRunMs = state.readNextRunEpochMs(taskId)
+                    emitter.emit(
+                        MonitorEvent.RetryScheduled(
+                            taskId = taskId,
+                            at = completedAt,
+                            nextAttempt = nextAttempt,
+                            delay = backoff.delayFor(attempt),
+                            nextRunHint = nextRunMs?.let { kotlin.time.Instant.fromEpochMilliseconds(it) },
+                        ),
+                    )
+                }
+            }
         }
     }
 

@@ -4,12 +4,16 @@ import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import co.touchlab.kermit.Logger
-import com.happycodelucky.backgrounder.BackgrounderEventListener
+import com.happycodelucky.backgrounder.AttemptFailureReason
+import com.happycodelucky.backgrounder.MonitorEvent
+import com.happycodelucky.backgrounder.MonitorEventEmitter
 import com.happycodelucky.backgrounder.PlatformCapabilities
+import com.happycodelucky.backgrounder.SkipReason
 import com.happycodelucky.backgrounder.WorkResult
 import com.happycodelucky.backgrounder.WorkerContext
 import com.happycodelucky.backgrounder.WorkerRegistry
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.time.Clock
 import kotlin.time.Duration.Companion.minutes
 import androidx.work.ListenableWorker.Result as AndroidResult
 
@@ -37,7 +41,7 @@ internal class RegistryDispatchWorker(
     context: Context,
     params: WorkerParameters,
     private val registry: WorkerRegistry,
-    private val eventListener: BackgrounderEventListener,
+    private val emitter: MonitorEventEmitter,
     private val readyGate: kotlinx.atomicfu.AtomicBoolean,
 ) : CoroutineWorker(context, params) {
     private val log = Logger.withTag("Backgrounder")
@@ -64,13 +68,37 @@ internal class RegistryDispatchWorker(
                     "fired before Backgrounder.markReady(); ephemeral request bailed " +
                         "(retry will happen after init completes)"
                 }
-                eventListener.onCompleted(taskId, runAttemptCount, WorkResult.Failure(REASON_NOT_READY))
+                val now = Clock.System.now()
+                emitter.emit(
+                    MonitorEvent.Skipped(
+                        taskId = taskId,
+                        at = now,
+                        reason = SkipReason.EphemeralExpired,
+                    ),
+                )
+                emitter.emit(
+                    MonitorEvent.WorkCompleted(
+                        taskId = taskId,
+                        at = now,
+                        attempt = runAttemptCount,
+                        result = WorkResult.Failure(REASON_NOT_READY),
+                        runtime = kotlin.time.Duration.ZERO,
+                    ),
+                )
                 return AndroidResult.failure()
             }
 
             val input =
                 runCatching { AndroidWorkInputMapper.readInput(inputData) }.getOrElse {
                     tagged.e(it) { "failed to deserialize WorkInput; failing the worker" }
+                    emitter.emit(
+                        MonitorEvent.LibraryError(
+                            taskId = taskId,
+                            at = Clock.System.now(),
+                            message = "failed to deserialize WorkInput",
+                            cause = it,
+                        ),
+                    )
                     return AndroidResult.failure()
                 }
 
@@ -79,11 +107,37 @@ internal class RegistryDispatchWorker(
                     registry.create(taskId)
                 } catch (cause: WorkerRegistry.NoFactoryRegisteredException) {
                     tagged.e(cause) { "no factory registered; failing the worker" }
+                    emitter.emit(
+                        MonitorEvent.Skipped(
+                            taskId = taskId,
+                            at = Clock.System.now(),
+                            reason = SkipReason.NotRegistered,
+                        ),
+                    )
+                    return AndroidResult.failure()
+                } catch (t: Throwable) {
+                    tagged.e(t) { "factory threw; failing the worker" }
+                    emitter.emit(
+                        MonitorEvent.AttemptFailed(
+                            taskId = taskId,
+                            at = Clock.System.now(),
+                            attempt = runAttemptCount,
+                            reason = AttemptFailureReason.FactoryThrew(t),
+                        ),
+                    )
                     return AndroidResult.failure()
                 }
 
             val attempt = runAttemptCount
-            eventListener.onStarted(taskId, attempt)
+            val startedAt = Clock.System.now()
+            emitter.emit(
+                MonitorEvent.WorkStarted(
+                    taskId = taskId,
+                    at = startedAt,
+                    attempt = attempt,
+                    expectedAt = null,
+                ),
+            )
             tagged.d { "execute() attempt=$attempt" }
 
             val ctx =
@@ -98,6 +152,7 @@ internal class RegistryDispatchWorker(
                         ),
                 )
 
+            var workerThrew: Throwable? = null
             val result: WorkResult =
                 try {
                     worker.execute(ctx)
@@ -106,10 +161,31 @@ internal class RegistryDispatchWorker(
                     throw e
                 } catch (t: Throwable) {
                     tagged.e(t) { "[$taskId] threw; treating as Retry" }
+                    workerThrew = t
                     WorkResult.Retry
                 }
 
-            eventListener.onCompleted(taskId, attempt, result)
+            workerThrew?.let { cause ->
+                emitter.emit(
+                    MonitorEvent.AttemptFailed(
+                        taskId = taskId,
+                        at = Clock.System.now(),
+                        attempt = attempt,
+                        reason = AttemptFailureReason.WorkerThrew(cause),
+                    ),
+                )
+            }
+
+            val completedAt = Clock.System.now()
+            emitter.emit(
+                MonitorEvent.WorkCompleted(
+                    taskId = taskId,
+                    at = completedAt,
+                    attempt = attempt,
+                    result = result,
+                    runtime = completedAt - startedAt,
+                ),
+            )
 
             return when (result) {
                 WorkResult.Success -> {
@@ -126,6 +202,20 @@ internal class RegistryDispatchWorker(
                         tagged.w { "max attempts ($cap) reached; converting Retry to failure" }
                         AndroidResult.failure()
                     } else {
+                        // WorkManager owns the backoff curve internally; the
+                        // delay isn't surfaced back through any inputData field
+                        // we control. Emit with `delay = ZERO` and
+                        // `nextRunHint = null` — consumers needing exact timing
+                        // should query WorkInfo's next-schedule fields.
+                        emitter.emit(
+                            MonitorEvent.RetryScheduled(
+                                taskId = taskId,
+                                at = Clock.System.now(),
+                                nextAttempt = attempt + 1,
+                                delay = kotlin.time.Duration.ZERO,
+                                nextRunHint = null,
+                            ),
+                        )
                         AndroidResult.retry()
                     }
                 }

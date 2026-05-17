@@ -110,6 +110,30 @@ public class WorkerRegistry internal constructor() {
         }
 
     /**
+     * Inspector-shaped view of every registered factory — one
+     * [FactoryDescriptor.PerId] per closure registration, one
+     * [FactoryDescriptor.Bulk] per [BackgroundWorkerFactory].
+     *
+     * Order is registration order: per-id registrations interleave naturally
+     * with bulk factories in the order each appears here, but the public
+     * surface presents per-ids first (sorted by [TaskId.value] for stability)
+     * then bulk factories (in registration order) so the inspector output
+     * stays deterministic across calls.
+     */
+    @ObjCName(swiftName = "factoryDescriptors")
+    public fun factoryDescriptors(): List<FactoryDescriptor> =
+        synchronized(lock) {
+            buildList {
+                factories.keys.sortedBy { it.value }.forEach { id ->
+                    add(FactoryDescriptor.PerId(taskId = id))
+                }
+                factoryChain.forEach { factory ->
+                    add(FactoryDescriptor.Bulk(factoryId = factory.factoryId, taskIds = factory.taskIds.toSet()))
+                }
+            }
+        }
+
+    /**
      * Mark the registry sealed. After this, [register] throws — protects against
      * late registration after the platform has started dispatching work.
      */
