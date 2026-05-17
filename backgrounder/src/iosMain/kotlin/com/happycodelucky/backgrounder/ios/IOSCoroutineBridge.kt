@@ -1,10 +1,14 @@
 package com.happycodelucky.backgrounder.ios
 
 import co.touchlab.kermit.Logger
-import com.happycodelucky.backgrounder.BackgrounderEventListener
+import com.happycodelucky.backgrounder.AttemptFailureReason
 import com.happycodelucky.backgrounder.CompletionGuard
+import com.happycodelucky.backgrounder.DeferralReason
+import com.happycodelucky.backgrounder.MonitorEvent
+import com.happycodelucky.backgrounder.MonitorEventEmitter
 import com.happycodelucky.backgrounder.PlatformCapabilities
 import com.happycodelucky.backgrounder.ReachabilityGate
+import com.happycodelucky.backgrounder.SkipReason
 import com.happycodelucky.backgrounder.TaskId
 import com.happycodelucky.backgrounder.WorkResult
 import com.happycodelucky.backgrounder.WorkerContext
@@ -20,6 +24,7 @@ import kotlinx.coroutines.launch
 import platform.BackgroundTasks.BGAppRefreshTask
 import platform.BackgroundTasks.BGTask
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.time.Clock
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
@@ -62,7 +67,7 @@ internal class IOSCoroutineBridge(
     private val registry: WorkerRegistry,
     private val state: IOSStateStore,
     private val mutexes: IOSTaskMutexes,
-    private val eventListener: BackgrounderEventListener,
+    private val emitter: MonitorEventEmitter,
     private val gate: ReachabilityGate,
     private val applyResult: suspend (BGTask, TaskId, Int, WorkResult, CompletionGuard) -> Unit,
 ) {
@@ -84,7 +89,15 @@ internal class IOSCoroutineBridge(
         val attempt = state.readAttempt(taskId)
         val input = state.readInput(taskId)
         val networkRequired = state.readNetworkRequired(taskId)
-        eventListener.onStarted(taskId, attempt)
+        val startedAt = Clock.System.now()
+        emitter.emit(
+            MonitorEvent.WorkStarted(
+                taskId = taskId,
+                at = startedAt,
+                attempt = attempt,
+                expectedAt = state.readNextRunEpochMs(taskId)?.let { kotlin.time.Instant.fromEpochMilliseconds(it) },
+            ),
+        )
         tagged.d { "handle: attempt=$attempt networkRequired=$networkRequired" }
 
         val capabilities = capabilitiesFor(task)
@@ -111,7 +124,45 @@ internal class IOSCoroutineBridge(
                             registry.create(taskId)
                         } catch (e: WorkerRegistry.NoFactoryRegisteredException) {
                             tagged.e(e) { "no factory registered; treating as Failure" }
-                            applyResult(task, taskId, attempt, WorkResult.Failure("no factory: $taskId"), guard)
+                            emitter.emit(
+                                MonitorEvent.Skipped(
+                                    taskId = taskId,
+                                    at = Clock.System.now(),
+                                    reason = SkipReason.NotRegistered,
+                                ),
+                            )
+                            val failure = WorkResult.Failure("no factory: $taskId")
+                            applyResult(task, taskId, attempt, failure, guard)
+                            emitter.emit(
+                                MonitorEvent.WorkCompleted(
+                                    taskId = taskId,
+                                    at = Clock.System.now(),
+                                    attempt = attempt,
+                                    result = failure,
+                                    runtime = Clock.System.now() - startedAt,
+                                ),
+                            )
+                            return@withMutex
+                        } catch (t: Throwable) {
+                            tagged.e(t) { "factory threw; treating as Retry" }
+                            emitter.emit(
+                                MonitorEvent.AttemptFailed(
+                                    taskId = taskId,
+                                    at = Clock.System.now(),
+                                    attempt = attempt,
+                                    reason = AttemptFailureReason.FactoryThrew(t),
+                                ),
+                            )
+                            applyResult(task, taskId, attempt, WorkResult.Retry, guard)
+                            emitter.emit(
+                                MonitorEvent.WorkCompleted(
+                                    taskId = taskId,
+                                    at = Clock.System.now(),
+                                    attempt = attempt,
+                                    result = WorkResult.Retry,
+                                    runtime = Clock.System.now() - startedAt,
+                                ),
+                            )
                             return@withMutex
                         }
 
@@ -136,11 +187,32 @@ internal class IOSCoroutineBridge(
                     val gateResult = gate.awaitReachable(networkRequired, gateBudget)
                     if (gateResult is ReachabilityGate.GateResult.TimedOut) {
                         tagged.i { "reachability gate timed out (requirement=$networkRequired, budget=$gateBudget); deferring as Retry" }
+                        emitter.emit(
+                            MonitorEvent.AttemptDeferred(
+                                taskId = taskId,
+                                at = Clock.System.now(),
+                                attempt = attempt,
+                                reason =
+                                    DeferralReason.ReachabilityTimeout(
+                                        requirement = networkRequired,
+                                        budget = gateBudget,
+                                    ),
+                            ),
+                        )
                         applyResult(task, taskId, attempt, WorkResult.Retry, guard)
-                        eventListener.onCompleted(taskId, attempt, WorkResult.Retry)
+                        emitter.emit(
+                            MonitorEvent.WorkCompleted(
+                                taskId = taskId,
+                                at = Clock.System.now(),
+                                attempt = attempt,
+                                result = WorkResult.Retry,
+                                runtime = Clock.System.now() - startedAt,
+                            ),
+                        )
                         return@withMutex
                     }
 
+                    var workerThrew: Throwable? = null
                     val result: WorkResult =
                         try {
                             worker.execute(ctx)
@@ -149,11 +221,31 @@ internal class IOSCoroutineBridge(
                             throw e
                         } catch (t: Throwable) {
                             tagged.e(t) { "execute() threw; treating as Retry" }
+                            workerThrew = t
                             WorkResult.Retry
                         }
 
+                    workerThrew?.let { cause ->
+                        emitter.emit(
+                            MonitorEvent.AttemptFailed(
+                                taskId = taskId,
+                                at = Clock.System.now(),
+                                attempt = attempt,
+                                reason = AttemptFailureReason.WorkerThrew(cause),
+                            ),
+                        )
+                    }
+
                     applyResult(task, taskId, attempt, result, guard)
-                    eventListener.onCompleted(taskId, attempt, result)
+                    emitter.emit(
+                        MonitorEvent.WorkCompleted(
+                            taskId = taskId,
+                            at = Clock.System.now(),
+                            attempt = attempt,
+                            result = result,
+                            runtime = Clock.System.now() - startedAt,
+                        ),
+                    )
                 }
             }
 
@@ -165,10 +257,23 @@ internal class IOSCoroutineBridge(
         job.invokeOnCompletion { cause ->
             if (cause != null) {
                 guard.runOnce { task.setTaskCompletedWithSuccess(false) }
-                eventListener.onCompleted(
-                    taskId,
-                    attempt,
-                    WorkResult.Failure(cause.message ?: "expired"),
+                val expiredAt = Clock.System.now()
+                emitter.emit(
+                    MonitorEvent.AttemptFailed(
+                        taskId = taskId,
+                        at = expiredAt,
+                        attempt = attempt,
+                        reason = AttemptFailureReason.ExpiredByOS,
+                    ),
+                )
+                emitter.emit(
+                    MonitorEvent.WorkCompleted(
+                        taskId = taskId,
+                        at = expiredAt,
+                        attempt = attempt,
+                        result = WorkResult.Failure(cause.message ?: "expired"),
+                        runtime = expiredAt - startedAt,
+                    ),
                 )
             }
         }

@@ -53,6 +53,11 @@ internal object IOSBackgrounderBuilder {
         val gate = ReachabilityGate(Reachability.shared)
         Reachability.shared.isReachable // discarded — read is the warmup side-effect
 
+        // Single emitter shared across every iOS emit site. The four v1
+        // listener callbacks are fanned out internally; richer MonitorEvent
+        // cases only reach the SharedFlow.
+        val emitter = MonitorEventEmitter(eventListener)
+
         // The dispatcher is pure logic — no platform deps. Constructed here
         // so its lifecycle is co-owned with the rest of the iOS graph; the
         // background feed consumes it directly (foreground feed in step 5).
@@ -62,7 +67,7 @@ internal object IOSBackgrounderBuilder {
                 mutexes = mutexes,
                 registry = registry,
                 ephemeral = ephemeral,
-                eventListener = eventListener,
+                emitter = emitter,
                 gate = gate,
             )
 
@@ -90,7 +95,7 @@ internal object IOSBackgrounderBuilder {
                 state = state,
                 mutexes = mutexes,
                 ephemeral = ephemeral,
-                eventListener = eventListener,
+                emitter = emitter,
                 backgroundFeed = backgroundFeed,
                 foregroundFeed = foregroundFeed,
             )
@@ -102,7 +107,7 @@ internal object IOSBackgrounderBuilder {
                 registry = registry,
                 state = state,
                 mutexes = mutexes,
-                eventListener = eventListener,
+                emitter = emitter,
                 gate = gate,
                 applyResult = { task, taskId, attempt, result, guard ->
                     scheduler.applyResult(task, taskId, attempt, result, guard)
@@ -135,7 +140,7 @@ internal object IOSBackgrounderBuilder {
                 registry = registry,
                 scheduler = scheduler,
                 instantRunner = instantRunner,
-                emitter = MonitorEventEmitter(eventListener),
+                emitter = emitter,
                 onStart = {
                     // Sweep first (clears ephemeral state before any handler fires),
                     // then registration (registers OS handlers, validates plist,

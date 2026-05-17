@@ -5,13 +5,15 @@
 package com.happycodelucky.backgrounder.ios
 
 import co.touchlab.kermit.Logger
-import com.happycodelucky.backgrounder.BackgrounderEventListener
 import com.happycodelucky.backgrounder.BackoffPolicy
 import com.happycodelucky.backgrounder.CancelOutcome
+import com.happycodelucky.backgrounder.CancelSource
 import com.happycodelucky.backgrounder.CompletionGuard
 import com.happycodelucky.backgrounder.ConflictPolicy
 import com.happycodelucky.backgrounder.EphemeralRegistry
 import com.happycodelucky.backgrounder.ExecutionHint
+import com.happycodelucky.backgrounder.MonitorEvent
+import com.happycodelucky.backgrounder.MonitorEventEmitter
 import com.happycodelucky.backgrounder.ScheduleOutcome
 import com.happycodelucky.backgrounder.ScheduledTask
 import com.happycodelucky.backgrounder.Scheduler
@@ -40,7 +42,7 @@ internal class BGTaskBackedScheduler(
     private val state: IOSStateStore,
     private val mutexes: IOSTaskMutexes,
     private val ephemeral: EphemeralRegistry,
-    private val eventListener: BackgrounderEventListener,
+    private val emitter: MonitorEventEmitter,
     // Step 6 cut-over: Periodics no longer have per-`TaskId` BGTaskRequests.
     // Instead, scheduling a Periodic writes to state and signals both feeds:
     //  - backgroundFeed.submitNextTick() so iOS's tick request gets refreshed
@@ -149,6 +151,15 @@ internal class BGTaskBackedScheduler(
                 // `2 * initialDelay` (exponential) or `2 * initialDelay` (linear), etc.
                 val nextRun = IOSBackoffEmulation.nextRunEpochMs(backoff, attempt)
                 state.setNextRunEpochMs(taskId, nextRun)
+                emitter.emit(
+                    MonitorEvent.RetryScheduled(
+                        taskId = taskId,
+                        at = kotlin.time.Clock.System.now(),
+                        nextAttempt = nextAttempt,
+                        delay = backoff.delayFor(attempt),
+                        nextRunHint = kotlin.time.Instant.fromEpochMilliseconds(nextRun),
+                    ),
+                )
                 resubmit(taskId, nextRun)
                 guard.runOnce { task.setTaskCompletedWithSuccess(true) }
             }
@@ -194,7 +205,7 @@ internal class BGTaskBackedScheduler(
         policy: ConflictPolicy,
     ): ScheduleOutcome {
         // H-3 (review-loop round 1): Keep-policy early-return must NOT run side
-        // effects. Previously `ephemeral.add(...)` and `eventListener.onScheduled(...)`
+        // effects. Previously `ephemeral.add(...)` and the `onScheduled` emission
         // both fired before the Keep guard, so a no-op schedule looked to metrics
         // like a real schedule and could mutate the ephemeral registry of an
         // already-active non-ephemeral task. Check the guard first.
@@ -203,8 +214,28 @@ internal class BGTaskBackedScheduler(
             return ScheduleOutcome.Scheduled
         }
 
+        // ScheduleReplaced fires *before* Scheduled when a Replace policy
+        // displaces an existing active task. Observers see the prior task end
+        // (logically) and the new one begin.
+        if (policy == ConflictPolicy.Replace && state.readActive(request.taskId)) {
+            emitter.emit(
+                MonitorEvent.ScheduleReplaced(
+                    taskId = request.taskId,
+                    at = kotlin.time.Clock.System.now(),
+                    policy = policy,
+                    current = request,
+                ),
+            )
+        }
+
         if (request.ephemeral) ephemeral.add(request.taskId)
-        eventListener.onScheduled(request.taskId, request)
+        emitter.emit(
+            MonitorEvent.Scheduled(
+                taskId = request.taskId,
+                at = kotlin.time.Clock.System.now(),
+                request = request,
+            ),
+        )
 
         return when (request) {
             is WorkRequest.OneTime -> scheduleOneTime(request)
@@ -279,6 +310,14 @@ internal class BGTaskBackedScheduler(
 
             is BGSubmitResult.Failure -> {
                 log.e { "submit failed for $taskId: ${outcome.message}" }
+                emitter.emit(
+                    MonitorEvent.LibraryError(
+                        taskId = taskId,
+                        at = kotlin.time.Clock.System.now(),
+                        message = "BGTaskScheduler.submit failed: ${outcome.message}",
+                        cause = null,
+                    ),
+                )
                 // Wipe state so we don't leave a phantom active record.
                 state.clear(taskId)
                 ScheduleOutcome.Rejected("BGTaskScheduler.submit failed: ${outcome.message}")
@@ -304,7 +343,13 @@ internal class BGTaskBackedScheduler(
         state.clear(taskId)
         ephemeral.remove(taskId)
         mutexes.forget(taskId)
-        eventListener.onCancelled(taskId)
+        emitter.emit(
+            MonitorEvent.Cancelled(
+                taskId = taskId,
+                at = kotlin.time.Clock.System.now(),
+                source = CancelSource.User,
+            ),
+        )
 
         if (kindBeforeClear == IOSStateStore.Kind.Periodic) {
             // Refresh the tick — soonest may have moved later (or to null) now
@@ -334,13 +379,20 @@ internal class BGTaskBackedScheduler(
         // Step 6 cut-over: for periodics, there's no per-id BGTaskRequest to cancel
         // in iOS's queue (only the tick exists, and we cancel it once after the
         // loop). For one-shots, the per-id cancel still applies.
+        val cancelledAt = kotlin.time.Clock.System.now()
         ids.forEach { id ->
             if (state.readKind(id) == IOSStateStore.Kind.OneShot) {
                 BGTaskScheduler.sharedScheduler.cancelTaskRequestWithIdentifier(id.value)
             }
             state.setActive(id, false)
             state.clear(id)
-            eventListener.onCancelled(id)
+            emitter.emit(
+                MonitorEvent.Cancelled(
+                    taskId = id,
+                    at = cancelledAt,
+                    source = CancelSource.User,
+                ),
+            )
         }
         // Cancel the tick request — there are no periodics left to drive it.
         backgroundFeed.cancel()

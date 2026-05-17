@@ -101,7 +101,7 @@ class IOSPeriodicDispatcherTest {
                 mutexes = mutexes,
                 registry = registry,
                 ephemeral = ephemeral,
-                eventListener = events,
+                emitter = com.happycodelucky.backgrounder.MonitorEventEmitter(events),
                 gate = gate,
                 clock = scope.virtualClock(),
             )

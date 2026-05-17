@@ -7,12 +7,14 @@ import androidx.work.OutOfQuotaPolicy
 import androidx.work.PeriodicWorkRequest
 import androidx.work.WorkManager
 import co.touchlab.kermit.Logger
-import com.happycodelucky.backgrounder.BackgrounderEventListener
 import com.happycodelucky.backgrounder.BackoffPolicy
 import com.happycodelucky.backgrounder.CancelOutcome
+import com.happycodelucky.backgrounder.CancelSource
 import com.happycodelucky.backgrounder.ConflictPolicy
 import com.happycodelucky.backgrounder.EphemeralRegistry
 import com.happycodelucky.backgrounder.ExecutionHint
+import com.happycodelucky.backgrounder.MonitorEvent
+import com.happycodelucky.backgrounder.MonitorEventEmitter
 import com.happycodelucky.backgrounder.QuotaPolicy
 import com.happycodelucky.backgrounder.ScheduleOutcome
 import com.happycodelucky.backgrounder.ScheduledTask
@@ -21,6 +23,7 @@ import com.happycodelucky.backgrounder.SchedulerGuarantees
 import com.happycodelucky.backgrounder.TaskId
 import com.happycodelucky.backgrounder.WorkRequest
 import java.util.concurrent.TimeUnit
+import kotlin.time.Clock
 import kotlin.time.Duration
 import androidx.work.BackoffPolicy as AndroidBackoffPolicy
 import androidx.work.WorkRequest as AndroidWorkRequest
@@ -34,7 +37,7 @@ import androidx.work.WorkRequest as AndroidWorkRequest
 internal class WorkManagerScheduler(
     private val workManagerProvider: () -> WorkManager,
     private val ephemeral: EphemeralRegistry,
-    private val eventListener: BackgrounderEventListener,
+    private val emitter: MonitorEventEmitter,
     private val scheduledTaskQuery: AndroidScheduledTaskQuery,
     /**
      * Process-local in-memory tracker of task ids this scheduler has enqueued.
@@ -56,8 +59,28 @@ internal class WorkManagerScheduler(
         request: WorkRequest,
         policy: ConflictPolicy,
     ): ScheduleOutcome {
+        // ScheduleReplaced fires *before* Scheduled when Replace policy
+        // displaces an existing tracked id. WorkManager's REPLACE / UPDATE
+        // semantics then take over for the OS-side replacement.
+        if (policy == ConflictPolicy.Replace && request.taskId in scheduledIds.snapshot()) {
+            emitter.emit(
+                MonitorEvent.ScheduleReplaced(
+                    taskId = request.taskId,
+                    at = Clock.System.now(),
+                    policy = policy,
+                    current = request,
+                ),
+            )
+        }
+
         if (request.ephemeral) ephemeral.add(request.taskId)
-        eventListener.onScheduled(request.taskId, request)
+        emitter.emit(
+            MonitorEvent.Scheduled(
+                taskId = request.taskId,
+                at = Clock.System.now(),
+                request = request,
+            ),
+        )
         scheduledIds.add(request.taskId)
 
         return when (request) {
@@ -146,13 +169,20 @@ internal class WorkManagerScheduler(
         ephemeral.remove(taskId)
         workManager.cancelUniqueWork(taskId.value)
         if (wasKnown) {
-            eventListener.onCancelled(taskId)
+            emitter.emit(
+                MonitorEvent.Cancelled(
+                    taskId = taskId,
+                    at = Clock.System.now(),
+                    source = CancelSource.User,
+                ),
+            )
             return CancelOutcome.Cancelled(pendingCleared = 1)
         }
         return CancelOutcome.NoSuchTask
     }
 
     override fun cancelAll(): CancelOutcome {
+        val priorIds = scheduledIds.snapshot()
         val cleared = scheduledIds.clearAndCount()
         // Cancel all Backgrounder-tagged work — even cross-process — so the OS
         // side stays consistent regardless of whether we tracked the id locally.
@@ -161,6 +191,10 @@ internal class WorkManagerScheduler(
         if (cleared == 0) {
             log.d { "cancelAll(): nothing scheduled in this process" }
             return CancelOutcome.NoSuchTask
+        }
+        val now = Clock.System.now()
+        priorIds.forEach { id ->
+            emitter.emit(MonitorEvent.Cancelled(taskId = id, at = now, source = CancelSource.User))
         }
         log.i { "cancelAll(): cleared $cleared Backgrounder-tagged work item(s)" }
         return CancelOutcome.Cancelled(pendingCleared = cleared)
