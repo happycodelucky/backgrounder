@@ -88,7 +88,15 @@ launch { poller.diagnostics.collect { diag -> renderHealthBanner(diag) } }
 
 Before the first poll completes, `poller.scheduled` emits `null`. After that, every poll either updates the flow value or leaves it unchanged (`StateFlow` de-duplicates equal values). `poller.diagnostics` starts at `PlatformDiagnostics.Healthy`.
 
-Combine with a `Monitor` for a debug screen that shows both real-time events and refreshed state:
+For on-demand refreshes — pull-to-refresh, or reacting to a `WorkCompleted` event so the task list updates immediately rather than on the next interval tick — call `poller.pollNow()`:
+
+```kotlin
+poller.pollNow()  // suspend; runs one poll, updates both StateFlows, returns.
+```
+
+`pollNow()` is additive: it does not reset the interval cadence, and it works whether `start()` has been called or not (so a screen that only wants on-demand polling can construct the poller and skip `start()` entirely).
+
+Combine the interval loop with a `Monitor` for a debug screen that shows both real-time events and refreshed state:
 
 ```kotlin
 class DebugScreenViewModel(backgrounder: Backgrounder) : ViewModel() {
@@ -109,7 +117,8 @@ class DebugScreenViewModel(backgrounder: Backgrounder) : ViewModel() {
             override suspend fun onEvent(event: MonitorEvent) {
                 // Trigger an immediate poll on task completion so the task list
                 // reflects the finished state without waiting for the next tick.
-                if (event is MonitorEvent.WorkCompleted) poller.start(viewModelScope)
+                // pollNow() is additive — the interval loop's cadence is unchanged.
+                if (event is MonitorEvent.WorkCompleted) poller.pollNow()
             }
         })
     }

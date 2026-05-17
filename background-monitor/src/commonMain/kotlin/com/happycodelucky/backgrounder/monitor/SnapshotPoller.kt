@@ -79,10 +79,7 @@ public class SnapshotPoller(
         val job =
             scope.launch {
                 while (isActive) {
-                    runCatching {
-                        _scheduled.value = backgrounder.scheduled()
-                        _diagnostics.value = backgrounder.diagnostics()
-                    } // swallow per-iteration errors — the poll resumes next tick.
+                    pollNow() // one-shot poll; updates _scheduled and _diagnostics.
                     delay(interval)
                 }
             }
@@ -95,5 +92,35 @@ public class SnapshotPoller(
     public fun stop() {
         loop?.cancel()
         loop = null
+    }
+
+    /**
+     * Run a single poll immediately, updating [scheduled] and [diagnostics]
+     * synchronously with the call. Independent of the interval loop —
+     * works whether [start] has been called or not, and does not reset the
+     * interval cadence either way.
+     *
+     * Useful for "refresh on demand" UX (e.g. a user-pulled refresh
+     * gesture, or a `WorkCompleted` event triggering an immediate
+     * snapshot update). The interval loop's next poll still fires on its
+     * regular cadence; this call is purely additive.
+     *
+     * Errors are swallowed for parity with the interval loop — a failed
+     * poll leaves the flows holding their previous values. If you need to
+     * surface the failure, call [com.happycodelucky.backgrounder.Backgrounder.scheduled]
+     * and [com.happycodelucky.backgrounder.Backgrounder.diagnostics]
+     * directly instead.
+     *
+     * Concurrent calls (and concurrency with the interval loop) are safe —
+     * `MutableStateFlow.value` is thread-safe and the two writes
+     * (`_scheduled`, `_diagnostics`) are independent of each other. The
+     * last writer wins per flow.
+     */
+    @ObjCName(swiftName = "pollNow")
+    public suspend fun pollNow() {
+        runCatching {
+            _scheduled.value = backgrounder.scheduled()
+            _diagnostics.value = backgrounder.diagnostics()
+        } // swallow — parity with the interval loop.
     }
 }
