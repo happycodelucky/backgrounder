@@ -26,6 +26,13 @@ public data class ScheduledTask(
     public val attempt: Int,
     /** `true` if this task was scheduled with `WorkRequest.ephemeral = true`. */
     public val ephemeral: Boolean,
+    /**
+     * Conditions currently preventing this task from running, surfaced so
+     * inspector UIs can answer "why isn't this dispatching yet?". Best-effort
+     * per platform; see [PendingPredicate] for platform support caveats. Empty
+     * when nothing is blocking dispatch.
+     */
+    public val pendingPredicates: List<PendingPredicate> = emptyList(),
 ) {
     public enum class Kind { OneTime, Periodic }
 

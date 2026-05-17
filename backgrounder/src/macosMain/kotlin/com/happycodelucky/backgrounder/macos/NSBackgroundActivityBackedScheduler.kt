@@ -13,6 +13,7 @@ import com.happycodelucky.backgrounder.DeferralReason
 import com.happycodelucky.backgrounder.EphemeralRegistry
 import com.happycodelucky.backgrounder.MonitorEvent
 import com.happycodelucky.backgrounder.MonitorEventEmitter
+import com.happycodelucky.backgrounder.PendingPredicate
 import com.happycodelucky.backgrounder.PlatformCapabilities
 import com.happycodelucky.backgrounder.ReachabilityGate
 import com.happycodelucky.backgrounder.ScheduleOutcome
@@ -456,13 +457,24 @@ internal class NSBackgroundActivityBackedScheduler(
         synchronized(lock) {
             activities.keys.map { id ->
                 val attempt = attempts[id] ?: 0
+                val state0 = if (attempt > 0) ScheduledTask.State.Backoff else ScheduledTask.State.Pending
                 ScheduledTask(
                     taskId = id,
                     kind = kinds[id] ?: ScheduledTask.Kind.OneTime,
-                    state = if (attempt > 0) ScheduledTask.State.Backoff else ScheduledTask.State.Pending,
+                    state = state0,
                     nextRunHint = null,
                     attempt = attempt,
                     ephemeral = false, // Ephemeral state is tracked in EphemeralRegistry; surface there if needed.
+                    // macOS doesn't retain the original WorkConstraints once
+                    // the NSBackgroundActivityScheduler is built — the only
+                    // dispatch-blocking condition we can observe is the
+                    // backoff window when a previous attempt returned Retry.
+                    pendingPredicates =
+                        if (state0 == ScheduledTask.State.Backoff) {
+                            listOf(PendingPredicate.WaitingForBackoff(until = null))
+                        } else {
+                            emptyList()
+                        },
                 )
             }
         }

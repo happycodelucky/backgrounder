@@ -107,7 +107,7 @@ internal object AndroidBackgrounderBuilder {
                     },
                 ),
             )
-        AndroidBackgrounderInternals.attach(backgrounder, factory)
+        AndroidBackgrounderInternals.attach(backgrounder, factory, application, registry)
         return backgrounder
     }
 }

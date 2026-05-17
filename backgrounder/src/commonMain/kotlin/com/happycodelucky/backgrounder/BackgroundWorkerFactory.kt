@@ -40,6 +40,18 @@ import kotlin.native.ObjCName
 @OptIn(ExperimentalObjCName::class)
 public interface BackgroundWorkerFactory {
     /**
+     * Optional human-readable identifier surfaced via
+     * [Backgrounder.registeredFactories]. Useful in inspector dashboards
+     * for attributing task ids to the owning module / DI scope when one
+     * factory manages many ids.
+     *
+     * Default `null` is shown as `"<anonymous>"` by the inspector — no
+     * existing implementations need to be updated.
+     */
+    @ObjCName(swiftName = "factoryId")
+    public val factoryId: String? get() = null
+
+    /**
      * Every [TaskId] this factory can build a worker for. Must stay in sync
      * with [create] — see the type-level KDoc for the contract.
      */

@@ -127,6 +127,37 @@ public class Backgrounder internal constructor(
     public fun guarantees(): SchedulerGuarantees = engine.scheduler.guarantees()
 
     /**
+     * Every task id currently registered with the library — the union of
+     * per-id closures and every [BackgroundWorkerFactory]'s declared ids.
+     *
+     * Snapshot; safe to call at any time, before or after [start].
+     */
+    @ObjCName(swiftName = "registeredTaskIds")
+    public fun registeredTaskIds(): Set<TaskId> = engine.registry.registeredIds()
+
+    /**
+     * Inspector view of every registered factory — one [FactoryDescriptor]
+     * per closure registration and per [BackgroundWorkerFactory] object.
+     * See [WorkerRegistry.factoryDescriptors] for ordering.
+     */
+    @ObjCName(swiftName = "registeredFactories")
+    public fun registeredFactories(): List<FactoryDescriptor> = engine.registry.factoryDescriptors()
+
+    /**
+     * Snapshot of environment and configuration issues the library has
+     * detected — missing iOS `Info.plist` entries, disabled Android
+     * `WorkManager`, registry not yet sealed, etc. An empty
+     * [PlatformDiagnostics.diagnostics] list (or
+     * `PlatformDiagnostics.isHealthy == true`) means the library believes
+     * the environment is correctly configured.
+     *
+     * Best-effort per platform — see [PlatformDiagnostic] for which cases
+     * each platform can produce.
+     */
+    @ObjCName(swiftName = "diagnostics")
+    public fun diagnostics(): PlatformDiagnostics = platformDiagnostics(engine.registry, engine.isStarted)
+
+    /**
      * Hot stream of [MonitorEvent]s — every schedule, dispatch, deferral,
      * completion, retry, cancellation, and library-internal error the
      * scheduler observes.
