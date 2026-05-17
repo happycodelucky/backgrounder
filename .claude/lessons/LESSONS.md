@@ -239,6 +239,11 @@ reader would not infer from the code. Capture the **decision** and the
 **Why over the obvious alternative:** Large `expect`/`actual` surfaces hide architecture. Interfaces declare contract explicitly and survive refactors better.
 **Ref:** CLAUDE.md §4.
 
+### D-019 — `MonitorEventEmitter` is `tryEmit`-only — 2026-05-17
+**Decision:** Every emit site funnels through `MonitorEventEmitter.emit(...)`, which fans out synchronously to the legacy `BackgrounderEventListener` and `tryEmit`s into the public `SharedFlow(replay=0, extraBufferCapacity=64, onBufferOverflow=DROP_OLDEST)`. Never the suspending `MutableSharedFlow.emit`.
+**Why over the obvious alternative:** Suspending `emit` lets a slow collector backpressure-block the producer. The iOS bridge holds the per-task `Mutex` while emitting; a slow `events()` collector would serialise every subsequent dispatch on that id. CLAUDE.md §3 forbids that. `DROP_OLDEST` is honest — collectors see the gap rather than the producer stalling.
+**Ref:** PR #28 (wave 1).
+
 ---
 
 ## NEVER DO (N)
