@@ -1,9 +1,21 @@
 name: Release
 
-# Maven Central is the only active distribution channel. The previous
-# XCFramework-zip / GitHub Release pipeline was removed — see git history
-# if you need to restore an SPM-side delivery story for non-KMP iOS / macOS
-# consumers.
+# Two distribution channels ship from this workflow:
+#
+#   1. Maven Central (vanniktech plugin) — Android AAR, kotlinMultiplatform
+#      metadata, per-target klibs. For Gradle / KMP consumers.
+#   2. GitHub Releases (KMMBridge) — the SKIE-enhanced Backgrounder.xcframework
+#      zip, attached to the vX.Y.Z release and referenced from the root
+#      Package.swift by URL + checksum. For pure-Swift SPM consumers; no
+#      Gradle build, no authentication. GitHub *Releases*, not GitHub
+#      *Packages* — Packages requires a PAT even to download from public
+#      repos, which is unusable for an open-source Swift package.
+#
+# SPM ordering constraint: the version tag must contain a Package.swift
+# whose URL + checksum point at an asset that already exists. KMMBridge
+# resolves the chicken-and-egg the same way Touchlab's own flow does —
+# create the release (and tag) first, upload the zip, regenerate
+# Package.swift, then commit it and force-move the tag onto that commit.
 #
 # The runner picks `bumpType` (patch / minor / major); the workflow computes
 # the actual version from the latest GitHub Release. The chosen component
@@ -53,9 +65,10 @@ on:
         type: boolean
         default: true
 
-# `contents: write` lets the workflow push the version tag and create the
-# GitHub Release after a successful Maven Central publish. Tagging happens
-# only on `dryRun=false` — see "Tag + create GitHub Release" step.
+# `contents: write` covers everything the SPM side needs: KMMBridge creating
+# the GitHub Release + uploading the XCFramework zip asset, the Package.swift
+# commit pushed back to main, and the force-moved version tag. All of it
+# happens only on `dryRun=false` — see the SPM steps below.
 #
 # `pages: write` + `id-token: write` are here for the `docs` job below,
 # which calls the reusable Docs workflow to rebuild + deploy the site with
@@ -202,17 +215,29 @@ jobs:
       # collision here gives a clear "this version is already published"
       # message and saves a few minutes of build time on a doomed run.
       #
-      # Checks every module that ships under com.happycodelucky.backgrounder.
-      # Add artifact ids to the loop when new publishable modules land (e.g.
-      # a future `:backgrounder-testing` companion — just append the artifact
-      # id and the next release picks it up automatically). The grep is
-      # exact-match for `<version>X.Y.Z</version>` to avoid substring matches
-      # (e.g. version 0.3.1 matching 0.3.10).
+      # Checks every module that ships under com.happycodelucky.backgrounder
+      # (the core plus the `:background-monitor` companion — both version and
+      # ship together, so a collision on either one means the run can't
+      # proceed). Append artifact ids to the loop when new publishable modules
+      # land. The grep is exact-match for `<version>X.Y.Z</version>` to avoid
+      # substring matches (e.g. version 0.3.1 matching 0.3.10).
       - name: Verify version not already published
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+
+          # Releases run from main only. KMMBridge creates the GitHub Release
+          # tag against the *default branch* HEAD, and the Package.swift
+          # commit below pushes to main — running from any other ref would
+          # tag and commit the wrong history.
+          if [[ "${GITHUB_REF_NAME}" != "main" ]]; then
+            echo "::error::Releases must run from main (got '${GITHUB_REF_NAME}')."
+            exit 1
+          fi
+
           ESCAPED="${RELEASE_VERSION//./\\.}"
-          for ARTIFACT in backgrounder; do
+          for ARTIFACT in backgrounder background-monitor; do
             METADATA_URL="https://repo1.maven.org/maven2/com/happycodelucky/backgrounder/${ARTIFACT}/maven-metadata.xml"
             if curl -sf "$METADATA_URL" 2>/dev/null | grep -qE "<version>${ESCAPED}</version>"; then
               echo "::error::Version $RELEASE_VERSION is already published as com.happycodelucky.backgrounder:${ARTIFACT} on Maven Central."
@@ -220,7 +245,21 @@ jobs:
               exit 1
             fi
           done
-          echo "Version $RELEASE_VERSION is not yet on Maven Central — safe to publish."
+
+          # Same guard for the SPM side: KMMBridge aborts if a GitHub Release
+          # for the tag already exists (useExistingRelease=false), but that
+          # would fire *after* the irreversible Maven Central publish.
+          # Catching it here fails the run while it's still free.
+          if gh release view "$RELEASE_TAG" --json tagName >/dev/null 2>&1; then
+            echo "::error::A GitHub Release for $RELEASE_TAG already exists. Delete it (and its tag) or cut a different version."
+            exit 1
+          fi
+          if git rev-parse -q --verify "refs/tags/$RELEASE_TAG" >/dev/null; then
+            echo "::error::Tag $RELEASE_TAG already exists. Delete it or cut a different version."
+            exit 1
+          fi
+
+          echo "Version $RELEASE_VERSION is not yet on Maven Central and $RELEASE_TAG is unused — safe to publish."
 
       # mise pins JDK, gradle, etc. (see /mise.toml). setup-gradle below is
       # layered on top solely for its build / dependency cache.
@@ -294,39 +333,104 @@ jobs:
           ./gradlew publishAndReleaseToMavenCentral \
             -Pversion=$RELEASE_VERSION --no-daemon
 
-      # Only tag + create a GitHub Release on a real publish, not a dry run.
-      # The tag must point at the commit that produced the published artifact,
-      # so this step runs *after* the Maven Central publish succeeds. If
-      # publish fails the job aborts before we get here; no orphan tag is
-      # created.
+      # --- SPM distribution (KMMBridge) ----------------------------------
       #
-      # `gh release create --generate-notes` uses GitHub's auto-generated
-      # release notes (commits since the previous tag, grouped). The shields.io
-      # `Release` badge on the README points at /releases/latest and updates
-      # within seconds of this step finishing.
-      - name: Tag and create GitHub Release
+      # Runs only on a real publish — a dry run uploads nothing, so there is
+      # no asset for Package.swift to reference. `kmmBridgePublish` does the
+      # heavy lifting in one Gradle invocation:
+      #
+      #   1. Builds the SKIE-enhanced release Backgrounder.xcframework (all
+      #      three slices: iosArm64, iosSimulatorArm64, macosArm64).
+      #   2. Zips it and creates the GitHub Release tagged `vX.Y.Z` (the tag
+      #      lands on the default-branch HEAD — moved onto the Package.swift
+      #      commit two steps later).
+      #   3. Uploads `Backgrounder.xcframework.zip` as a release asset.
+      #   4. Regenerates the root Package.swift with the asset URL + sha256
+      #      checksum.
+      #
+      # Two non-obvious requirements (kmmbridge 1.2.1):
+      #   * `-PENABLE_PUBLISHING=true` — KMMBridge only registers the
+      #     `kmmBridgePublish` task when this property is set. Passed on the
+      #     CI command line only, so local builds can never accidentally
+      #     publish.
+      #   * `GITHUB_REPO` / `GITHUB_PUBLISH_TOKEN` — KMMBridge reads these
+      #     as *Gradle properties* (not env vars), hence the
+      #     ORG_GRADLE_PROJECT_ prefix, which Gradle maps onto project
+      #     properties of the un-prefixed name.
+      - name: Publish XCFramework to GitHub Release (KMMBridge)
+        if: ${{ !inputs.dryRun }}
+        env:
+          ORG_GRADLE_PROJECT_GITHUB_REPO: ${{ github.repository }}
+          ORG_GRADLE_PROJECT_GITHUB_PUBLISH_TOKEN: ${{ github.token }}
+        run: |
+          ./gradlew :backgrounder:kmmBridgePublish \
+            -Pversion=$RELEASE_VERSION \
+            -PENABLE_PUBLISHING=true \
+            --no-daemon
+
+      # KMMBridge writes the GitHub *API* asset URL into Package.swift
+      # (https://api.github.com/repos/…/releases/assets/<id>.zip). SPM can
+      # consume that — it sends `Accept: application/octet-stream` — but the
+      # URL serves JSON to plain HTTP clients and every download burns the
+      # anonymous API quota (60 requests/hour/IP), which bites shared CI
+      # egress IPs. The public browser URL serves the same bytes (same
+      # checksum) with no quota and no special headers, and is fully
+      # deterministic: tag + fixed asset name. Rewrite, then prove the
+      # manifest still parses (`dump-package` is offline — it never fetches
+      # the binary).
+      - name: Point Package.swift at the public release-asset URL
+        if: ${{ !inputs.dryRun }}
+        run: |
+          set -euo pipefail
+          ASSET_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/Backgrounder.xcframework.zip"
+
+          sed -i '' -E "s|^let remoteKotlinUrl = .*$|let remoteKotlinUrl = \"${ASSET_URL}\"|" Package.swift
+
+          # Belt-and-braces: if KMMBridge ever renames the variable, sed
+          # silently matches nothing — catch that here instead of shipping a
+          # tag whose Package.swift still points at the API URL.
+          grep -qF "$ASSET_URL" Package.swift
+          swift package dump-package > /dev/null
+          echo "Package.swift now references $ASSET_URL"
+
+      # The version tag must contain this Package.swift — SPM consumers
+      # resolve the manifest *from the tag*, then download the binary it
+      # references. KMMBridge created the tag against the pre-release HEAD
+      # when it created the GitHub Release, so after committing the
+      # regenerated Package.swift to main, force-move the tag onto that
+      # commit (same approach as Touchlab's ga-update-release-tag action).
+      # Finally, fill in the release title + auto-generated notes — KMMBridge
+      # creates the release bare. The shields.io `Release` badge on the
+      # README points at /releases/latest and updates within seconds.
+      - name: Commit Package.swift, move tag, finalize release notes
         if: ${{ !inputs.dryRun }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
 
-          if git rev-parse "$RELEASE_TAG" >/dev/null 2>&1; then
-            echo "Tag $RELEASE_TAG already exists locally; skipping creation."
-          else
-            git tag -a "$RELEASE_TAG" -m "Release $RELEASE_TAG"
-            git push origin "$RELEASE_TAG"
-          fi
+          git add Package.swift
+          git commit -m "release: Package.swift for $RELEASE_TAG"
 
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            echo "Release $RELEASE_TAG already exists; skipping creation."
-          else
-            gh release create "$RELEASE_TAG" \
-              --title "$RELEASE_TAG" \
-              --generate-notes \
-              --verify-tag
-          fi
+          # If main moved while Maven Central was uploading, rebase the
+          # one-commit delta rather than failing the push.
+          git pull --rebase origin main
+          git push origin HEAD:main
+
+          git tag -fa "$RELEASE_TAG" -m "Release $RELEASE_TAG"
+          git push --force origin "refs/tags/$RELEASE_TAG"
+
+          # `gh release edit` has no --generate-notes; ask the API for the
+          # generated body and attach it.
+          gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+            -f tag_name="$RELEASE_TAG" --jq .body > release-notes.md
+          gh release edit "$RELEASE_TAG" \
+            --title "$RELEASE_TAG" \
+            --notes-file release-notes.md \
+            --latest
+          rm -f release-notes.md
 
       - name: Summary
         run: |
@@ -338,6 +442,7 @@ jobs:
             echo "Released com.happycodelucky.backgrounder:backgrounder:$RELEASE_VERSION to Maven Central."
             echo "   Maven Central: https://central.sonatype.com/artifact/com.happycodelucky.backgrounder/backgrounder/$RELEASE_VERSION"
             echo "   GitHub Release: https://github.com/happycodelucky/backgrounder/releases/tag/$RELEASE_TAG"
+            echo "   SPM: add https://github.com/happycodelucky/backgrounder.git pinned to $RELEASE_TAG (XCFramework zip is a release asset)."
             echo "   Note: Maven Central indexing can take up to ~30 min to appear in https://repo1.maven.org/maven2/."
           fi
 

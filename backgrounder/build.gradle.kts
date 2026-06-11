@@ -11,7 +11,6 @@
 
 import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-import org.jetbrains.kotlin.gradle.plugin.mpp.apple.XCFramework
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
@@ -24,12 +23,19 @@ plugins {
     // transitively, so we don't apply `maven-publish` separately. The
     // `mavenPublishing { }` block below configures the Central Portal target,
     // POM metadata, and in-memory GPG signing.
-    //
-    // KMMBridge / GitHub Packages distribution is future work for non-KMP
-    // Swift consumers who need a hosted XCFramework zip via SPM. For now,
-    // Maven Central is the only active distribution channel. See CLAUDE.md §9
-    // and git history for the original KMMBridge architectural sketch.
     alias(libs.plugins.maven.publish)
+    // KMMBridge (CLAUDE.md §9): aggregates the per-target framework binaries
+    // declared below into `Backgrounder.xcframework`
+    // (build/XCFrameworks/{debug,release}/), publishes the release zip as a
+    // GitHub Release asset, and regenerates the root /Package.swift. The
+    // `.github` plugin variant is a superset of the core plugin in 1.2.x —
+    // applying both produces a duplicate-extension error, so only this one.
+    //
+    // Do NOT redeclare `XCFramework("Backgrounder")` in the kotlin { } block:
+    // KMMBridge auto-creates the aggregator from the framework binaries at
+    // config time (it provides `assembleBackgrounder{Debug,Release}XCFramework`),
+    // and a second declaration collides on those task names.
+    alias(libs.plugins.kmmbridge.github)
 }
 
 kotlin {
@@ -57,30 +63,26 @@ kotlin {
     }
 
     // --- Apple targets (CLAUDE.md §1) ---------------------------------------
-    // The XCFramework aggregator bundles all three slices (iosArm64 device,
-    // iosSimulatorArm64, macosArm64) into a single `Backgrounder.xcframework`
-    // directory at `build/XCFrameworks/{debug,release}/`.
+    // Static framework binaries with a stable bundle id, one per ARM slice
+    // (iosArm64 device, iosSimulatorArm64, macosArm64). KMMBridge aggregates
+    // these into `Backgrounder.xcframework` at config time — there is NO
+    // explicit `XCFramework("Backgrounder")` declaration here (see the plugins
+    // block): KMMBridge provides `assembleBackgrounder{Debug,Release}XCFramework`
+    // itself, writing to `build/XCFrameworks/{debug,release}/`, and a second
+    // declaration would collide on those task names.
     //
-    // Local-dev consumption: sample apps inside this repo reference the debug
-    // XCFramework via `.binaryTarget(path: …)` in the root `Package.swift`.
-    // Run `mise run spm:dev` to rebuild that debug artifact; Xcode picks it up
-    // without a publish step.
-    //
-    // Maven Central distribution does NOT use the XCFramework — it publishes
-    // the per-target klibs and `kotlinMultiplatform` metadata; KMP consumers
-    // resolve those automatically via `implementation("com.happycodelucky.backgrounder:backgrounder:X.Y.Z")`.
-    //
-    // Remote SPM distribution (hosted XCFramework zip → Package.swift → SPM)
-    // is future work; see CLAUDE.md §9 for the architectural sketch.
-    val xcf = XCFramework("Backgrounder")
+    // Two non-overlapping distribution channels consume these binaries:
+    //   * GitHub Releases (KMMBridge) — the SKIE-enhanced XCFramework zip for
+    //     pure-Swift SPM consumers. See the `kmmbridge { }` block below.
+    //   * Maven Central (vanniktech) does NOT use the XCFramework — it ships
+    //     the per-target klibs + `kotlinMultiplatform` metadata so KMP consumers
+    //     resolve via `implementation("com.happycodelucky.backgrounder:backgrounder:X.Y.Z")`.
     listOf(iosArm64(), iosSimulatorArm64(), macosArm64()).forEach { target ->
         target.binaries.framework {
             baseName = "Backgrounder"
             isStatic = true
             // Pin the bundle id so SKIE doesn't fall back to the framework name.
             binaryOption("bundleId", "com.happycodelucky.backgrounder.shared")
-            // CLAUDE.md §8: SKIE wraps the framework export.
-            xcf.add(this)
         }
     }
 
@@ -195,18 +197,72 @@ skie {
         // Disable opt-in analytics; we'll revisit if useful.
         disableUpload.set(true)
     }
+    build {
+        // Xcode 26 requires .swiftinterface files in every framework slice before
+        // xcodebuild -create-xcframework will accept them (exit 70 otherwise).
+        // produceDistributableFramework() enables Swift library evolution so SKIE
+        // emits .swiftinterface alongside .swiftmodule, satisfying the requirement
+        // for both debug and release XCFramework builds.
+        produceDistributableFramework()
+    }
 }
 
-// KMMBridge / GitHub Packages distribution previously lived here. It has
-// been removed in favour of Maven-Central-only distribution; see the
-// `mavenPublishing { }` block below. The previous wiring is in git
-// history — restore from there when an SPM-side delivery story is needed
-// for non-KMP iOS / macOS consumers again.
+// --- KMMBridge: XCFramework → GitHub Release asset → SPM (CLAUDE.md §9) -------
+//
+// Two distribution channels run from this module, and they don't overlap:
+//
+//   1. Maven Central (`mavenPublishing { }` below) — Android AAR,
+//      `kotlinMultiplatform` metadata, and per-target klibs. KMP consumers
+//      resolve these from `commonMain`; no XCFramework involved.
+//   2. GitHub Releases (this block) — the SKIE-enhanced `Backgrounder.xcframework`
+//      zip for pure-Swift consumers, referenced from the root /Package.swift
+//      by URL + checksum so `swift package resolve` needs no local Gradle
+//      build and no authentication.
+//
+// GitHub *Releases*, not GitHub *Packages*: Packages requires a PAT even to
+// download from public repos (every SPM consumer would need a ~/.netrc),
+// and Maven Central can't host the zip either — KMMBridge has no Central
+// Portal artifact manager, and Central's staging + sync delay would leave
+// the freshly-pushed tag referencing a URL that doesn't resolve yet.
+// Release assets are public, immediate, and checksum-pinned by SPM.
+//
+// `gitHubReleaseArtifacts` uploads `Backgrounder.xcframework.zip` to the GitHub
+// Release tagged `v${project.version}`, creating the release if it doesn't
+// exist. (`releasString` [sic] is KMMBridge 1.2.x's parameter name; without
+// it the release tag would be the bare version, breaking the repo's `vX.Y.Z`
+// tag convention.) Publishing is CI-only: the `kmmBridgePublish` umbrella
+// task is only registered when `-PENABLE_PUBLISHING=true` is passed, and the
+// upload reads the `GITHUB_REPO` / `GITHUB_PUBLISH_TOKEN` Gradle properties —
+// .github/workflows/release.yml supplies all three. Local builds skip the
+// publish wiring entirely; the `spmDevBuild` task (always registered) is the
+// local-dev entry point — see mise task `spm:dev`.
+gitHubReleaseArtifacts(releasString = "v${project.version}")
+
+kmmbridge {
+    // The XCFramework's Swift module name. Must match the `baseName` set on
+    // each framework binary above, or the generated Package.swift references
+    // a binary that doesn't exist.
+    frameworkName.set("Backgrounder")
+
+    // `swiftToolVersion = "6.0"` because the platform constants `.iOS(.v18)`
+    // and `.macOS(.v15)` need PackageDescription 6.0; KMMBridge defaults to
+    // 5.3, which can't compile them.
+    //
+    // Platform floors match `gradle/libs.versions.toml`
+    // (ios-deployment-target = 18.0, macos-deployment-target = 15.0). They're
+    // spelled "18" / "15" here because KMMBridge emits `.iOS(.v$value)`
+    // verbatim — "18.0" would produce the non-existent constant `.v18.0`.
+    spm(swiftToolVersion = "6.0") {
+        iOS { v("18") }
+        macOS { v("15") }
+    }
+}
 
 // --- Maven Central publishing (CLAUDE.md §9) ---------------------------------
 //
-// Single distribution channel: Maven Central via vanniktech's `maven-publish`
-// plugin. One Gradle invocation publishes:
+// The KMP distribution channel (the Swift/SPM channel is the KMMBridge block
+// above): Maven Central via vanniktech's `maven-publish` plugin. One Gradle
+// invocation publishes:
 //
 //   * The Android AAR.
 //   * The `kotlinMultiplatform` metadata module (`backgrounder-0.2.0.module`)

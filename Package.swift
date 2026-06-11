@@ -1,25 +1,25 @@
 // swift-tools-version:6.0
 //
-// LOCAL DEVELOPMENT ONLY.
+// GENERATED — do not hand-edit (CLAUDE.md §9).
 //
-// This Package.swift exists so sample apps inside this repo (iOSApp, macOSApp)
-// can consume the Backgrounder framework via `.package(path: "..")` without
-// going through a remote publish step. It references the *debug* XCFramework
-// that Gradle writes to `backgrounder/build/XCFrameworks/debug/`.
+// This manifest is written by KMMBridge:
+//   * `kmmBridgePublish` (release workflow) writes the *released* form — a
+//     remote `.binaryTarget(url:checksum:)` against the GitHub Release asset.
+//     SPM consumers add this repo's URL pinned to a version tag and get the
+//     prebuilt, SKIE-enhanced Backgrounder.xcframework. No Kotlin toolchain.
+//   * `spmDevBuild` (mise run spm:dev) rewrites it to a local
+//     `.binaryTarget(path:)` against backgrounder/build/XCFrameworks/debug/
+//     so the in-repo sample apps (iOSApp, macOSApp) pick up local Kotlin
+//     edits. This local form is a working-tree convenience — never commit it;
+//     `mise run spm:restore` puts the committed version back.
 //
-// Rebuild the debug XCFramework before opening Xcode:
-//   mise run spm:dev
-// or equivalently:
-//   ./gradlew :backgrounder:assembleBackgrounderDebugXCFramework
+// FIRST-RELEASE CAVEAT: until the first `dryRun=false` release runs, the
+// committed manifest below is still the local-path form. The first release
+// flips it to the remote-binary form; SPM consumption starts at that tag.
 //
-// Remote distribution (KMP consumers on Android / other KMP targets):
-//   Maven Central — com.happycodelucky.backgrounder:backgrounder:X.Y.Z
-//   No extra setup; add mavenCentral() to your repositories and depend on
-//   the coordinate from commonMain. Gradle resolves the right per-target
-//   klib automatically.
-//
-// Remote SPM distribution (hosted XCFramework zip via URL + checksum) is
-// future work. See CLAUDE.md §9 for the architectural sketch.
+// KMP consumers (Android / other KMP targets) use Maven Central instead:
+//   implementation("com.happycodelucky.backgrounder:backgrounder:X.Y.Z")
+// — add mavenCentral() and Gradle resolves the right per-target klib.
 
 import PackageDescription
 
