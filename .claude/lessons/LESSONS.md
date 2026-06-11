@@ -356,6 +356,7 @@ project — beyond CLAUDE.md §13's general hard rules. Section here is for the
 **Don't:** Bump Kotlin without checking the SKIE compatibility matrix first.
 **Why:** SKIE lags Kotlin releases by a few days. Bumping past the supported range disables SKIE; the framework falls back to default K/N ObjC export and the Swift surface regresses dramatically.
 **Ref:** CLAUDE.md §2, §8.
+**Lockstep example (2026-06):** reachable 0.13.0 was built on Kotlin 2.3.21, so the consumer bump pulled Kotlin 2.3.20→2.3.21 — which required SKIE 0.10.11→0.10.12 (its sole change is "Support for Kotlin 2.3.21"). Kotlin and SKIE moved together; this is the rule working as intended, not an exception to it.
 
 ### N-011 — Never read wall-clock time inside dispatcher / scheduler logic — 2026-05-10
 **Don't:** Call `Clock.System.now()` from code under test that uses `runTest` virtual time.
