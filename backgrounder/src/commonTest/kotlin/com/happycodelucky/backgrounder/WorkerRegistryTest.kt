@@ -180,4 +180,35 @@ class WorkerRegistryTest {
             registry.register(StubFactory(setOf(syncId)) { newWorker() })
         }
     }
+
+    // Anchor for B-021: create() resolves the factory under the registry lock
+    // but invokes it OUTSIDE the lock, so factory code (which is user code) may
+    // freely call back into registry read APIs. Guards against a refactor that
+    // moves the invocation back inside the critical section.
+    @Test
+    fun factoryCanCallBackIntoRegistryDuringCreate() {
+        val registry = WorkerRegistry()
+        var seenDuringPerIdCreate: Set<TaskId>? = null
+        registry.register(syncId) {
+            seenDuringPerIdCreate = registry.registeredIds()
+            newWorker()
+        }
+        var seenDuringBulkCreate: List<FactoryDescriptor>? = null
+        registry.register(
+            object : BackgroundWorkerFactory {
+                override val taskIds: Set<TaskId> = setOf(uploadId)
+
+                override fun create(taskId: TaskId): BackgroundWorker {
+                    seenDuringBulkCreate = registry.factoryDescriptors()
+                    return newWorker()
+                }
+            },
+        )
+
+        registry.create(syncId)
+        registry.create(uploadId)
+
+        assertEquals(setOf(syncId, uploadId), seenDuringPerIdCreate)
+        assertEquals(2, seenDuringBulkCreate?.size)
+    }
 }

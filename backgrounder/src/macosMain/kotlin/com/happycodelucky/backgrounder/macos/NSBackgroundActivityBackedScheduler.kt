@@ -89,29 +89,76 @@ internal class NSBackgroundActivityBackedScheduler(
         request: WorkRequest,
         policy: ConflictPolicy,
     ): ScheduleOutcome {
-        // H-3 (parallel to iOS): the Keep-policy early-return must NOT run side
-        // effects. Probe the activities map first (under the lock to avoid a
-        // half-released-then-reacquired window), and only fire `onScheduled` /
-        // mutate `ephemeral` if we are actually going to schedule.
+        // H-3 (parallel to iOS): a Keep-policy no-op must NOT run side effects.
+        // Fast-path probe so the common Keep case returns before building an
+        // activity; the authoritative decision is re-made under the lock below.
         val keepWonRace =
             synchronized(lock) {
-                val existing = activities[request.taskId]
-                policy == ConflictPolicy.Keep && existing != null
+                policy == ConflictPolicy.Keep && activities[request.taskId] != null
             }
         if (keepWonRace) {
             log.d { "schedule(${request.taskId}) Keep: existing activity; not replacing" }
             return ScheduleOutcome.Scheduled
         }
 
-        // Replace policy displacing an existing activity → ScheduleReplaced
-        // before Scheduled. Probe outside the lock; the synchronized block
-        // below holds the authoritative view, but emitting the event there
-        // would put a tryEmit inside a critical section unnecessarily.
-        val replacing =
+        // Single authoritative critical section (B-022): decide, mutate the
+        // maps, and record what happened. Events are emitted *after* the lock,
+        // derived from the decision — never speculatively before it — so a
+        // lost Keep race can't produce phantom Scheduled / ScheduleReplaced
+        // events or ephemeral entries. `ephemeral` mutation stays inside the
+        // lock, mirroring cancel() / cancelAll() (consistent lock order:
+        // scheduler lock → ephemeral lock).
+        var replaced = false
+        val activity: NSBackgroundActivityScheduler? =
             synchronized(lock) {
-                policy == ConflictPolicy.Replace && activities[request.taskId] != null
+                val existing = activities[request.taskId]
+                if (existing != null && policy == ConflictPolicy.Keep) {
+                    log.d { "schedule(${request.taskId}) Keep: existing activity; not replacing (lock-recheck)" }
+                    return@synchronized null
+                }
+                existing?.invalidate()
+                replaced = existing != null
+
+                val fresh =
+                    NSBackgroundActivityScheduler(request.taskId.value).apply {
+                        qualityOfService = NSQualityOfServiceUtility
+                        when (request) {
+                            is WorkRequest.OneTime -> {
+                                repeats = false
+                                // For one-shots, `interval` is the minimum delay before the
+                                // single fire. Allow zero — `WorkRequest.OneTime.initialDelay`
+                                // can be `Duration.ZERO`. Foundation's contract is tolerance
+                                // <= interval, so cap tolerance at the (possibly zero) interval.
+                                interval = (request.initialDelay.inWholeMilliseconds / 1000.0).coerceAtLeast(0.0)
+                                tolerance = (interval * 0.1).coerceAtMost(interval)
+                            }
+
+                            is WorkRequest.Periodic -> {
+                                repeats = true
+                                interval = (request.interval.inWholeMilliseconds / 1000.0).coerceAtLeast(1.0)
+                                // Tolerance must be <= interval; the explicit flexWindow is also
+                                // capped here so a misconfigured flex doesn't violate the contract.
+                                val rawTolerance =
+                                    request.flexWindow?.inWholeMilliseconds?.let { it / 1000.0 }
+                                        ?: (interval * 0.1).coerceAtLeast(60.0)
+                                tolerance = rawTolerance.coerceAtMost(interval)
+                            }
+                        }
+                    }
+
+                activities[request.taskId] = fresh
+                attempts[request.taskId] = 0
+                kinds[request.taskId] =
+                    when (request) {
+                        is WorkRequest.OneTime -> ScheduledTask.Kind.OneTime
+                        is WorkRequest.Periodic -> ScheduledTask.Kind.Periodic
+                    }
+                if (request.ephemeral) ephemeral.add(request.taskId)
+                fresh
             }
-        if (replacing) {
+        if (activity == null) return ScheduleOutcome.Scheduled
+
+        if (replaced) {
             emitter.emit(
                 MonitorEvent.ScheduleReplaced(
                     taskId = request.taskId,
@@ -121,8 +168,6 @@ internal class NSBackgroundActivityBackedScheduler(
                 ),
             )
         }
-
-        if (request.ephemeral) ephemeral.add(request.taskId)
         emitter.emit(
             MonitorEvent.Scheduled(
                 taskId = request.taskId,
@@ -131,54 +176,13 @@ internal class NSBackgroundActivityBackedScheduler(
             ),
         )
 
-        return synchronized(lock) {
-            // Re-check under the lock — a concurrent `schedule(...)` may have raced
-            // in between the probe above and this acquisition. If we lose the race,
-            // honour Keep semantics for the task that won.
-            val existing = activities[request.taskId]
-            if (existing != null && policy == ConflictPolicy.Keep) {
-                log.d { "schedule(${request.taskId}) Keep: existing activity; not replacing (lock-recheck)" }
-                return@synchronized ScheduleOutcome.Scheduled
-            }
-            existing?.invalidate()
-
-            val activity =
-                NSBackgroundActivityScheduler(request.taskId.value).apply {
-                    qualityOfService = NSQualityOfServiceUtility
-                    when (request) {
-                        is WorkRequest.OneTime -> {
-                            repeats = false
-                            // For one-shots, `interval` is the minimum delay before the
-                            // single fire. Allow zero — `WorkRequest.OneTime.initialDelay`
-                            // can be `Duration.ZERO`. Foundation's contract is tolerance
-                            // <= interval, so cap tolerance at the (possibly zero) interval.
-                            interval = (request.initialDelay.inWholeMilliseconds / 1000.0).coerceAtLeast(0.0)
-                            tolerance = (interval * 0.1).coerceAtMost(interval)
-                        }
-
-                        is WorkRequest.Periodic -> {
-                            repeats = true
-                            interval = (request.interval.inWholeMilliseconds / 1000.0).coerceAtLeast(1.0)
-                            // Tolerance must be <= interval; the explicit flexWindow is also
-                            // capped here so a misconfigured flex doesn't violate the contract.
-                            val rawTolerance =
-                                request.flexWindow?.inWholeMilliseconds?.let { it / 1000.0 }
-                                    ?: (interval * 0.1).coerceAtLeast(60.0)
-                            tolerance = rawTolerance.coerceAtMost(interval)
-                        }
-                    }
-                }
-
-            activities[request.taskId] = activity
-            attempts[request.taskId] = 0
-            kinds[request.taskId] =
-                when (request) {
-                    is WorkRequest.OneTime -> ScheduledTask.Kind.OneTime
-                    is WorkRequest.Periodic -> ScheduledTask.Kind.Periodic
-                }
-            launchActivity(activity, request)
-            ScheduleOutcome.Scheduled
-        }
+        // scheduleWithBlock is an ObjC dispatch into Foundation — never call it
+        // while holding `lock` (N-013): Foundation takes internal locks of its
+        // own, and the fired block re-enters Kotlin code that acquires `lock`.
+        // A concurrent cancel()/Replace between the map insert above and this
+        // call invalidates `activity` first, making this a harmless no-op.
+        launchActivity(activity, request)
+        return ScheduleOutcome.Scheduled
     }
 
     private fun launchActivity(
@@ -391,23 +395,27 @@ internal class NSBackgroundActivityBackedScheduler(
             ),
         )
 
-        synchronized(lock) {
-            // Invalidate the current activity *before* scheduling the fresh one so the
-            // map slot is cleanly reassigned. NSBackgroundActivityScheduler.invalidate
-            // is documented as safe from any thread.
-            activities.remove(request.taskId)?.invalidate()
-            val freshActivity =
-                NSBackgroundActivityScheduler(request.taskId.value).apply {
-                    qualityOfService = NSQualityOfServiceUtility
-                    repeats = false
-                    interval = delaySeconds
-                    tolerance = (interval * 0.1).coerceAtMost(interval)
-                }
-            activities[request.taskId] = freshActivity
-            // Launch the fresh activity. The closure captures the same `request`, so
-            // when it fires the worker sees the same input / constraints / backoff.
-            launchActivity(freshActivity, request)
-        }
+        val freshActivity =
+            synchronized(lock) {
+                // Invalidate the current activity *before* scheduling the fresh one so the
+                // map slot is cleanly reassigned. NSBackgroundActivityScheduler.invalidate
+                // is documented as safe from any thread.
+                activities.remove(request.taskId)?.invalidate()
+                val fresh =
+                    NSBackgroundActivityScheduler(request.taskId.value).apply {
+                        qualityOfService = NSQualityOfServiceUtility
+                        repeats = false
+                        interval = delaySeconds
+                        tolerance = (interval * 0.1).coerceAtMost(interval)
+                    }
+                activities[request.taskId] = fresh
+                fresh
+            }
+        // Launch the fresh activity OUTSIDE the lock (N-013) — scheduleWithBlock
+        // is an ObjC dispatch into Foundation. The closure captures the same
+        // `request`, so when it fires the worker sees the same input /
+        // constraints / backoff.
+        launchActivity(freshActivity, request)
 
         return NSBackgroundActivityResultFinished
     }

@@ -79,13 +79,19 @@ internal class IOSScheduledTaskQuery(
         }
         if (nextRunHint != null && nextRunHint > Clock.System.now()) {
             when (state0) {
-                ScheduledTask.State.Backoff ->
+                ScheduledTask.State.Backoff -> {
                     result.add(PendingPredicate.WaitingForBackoff(until = nextRunHint))
-                ScheduledTask.State.Pending ->
+                }
+
+                ScheduledTask.State.Pending -> {
                     result.add(PendingPredicate.WaitingForEarliestBeginDate(at = nextRunHint))
+                }
+
                 ScheduledTask.State.Running,
                 ScheduledTask.State.Blocked,
-                -> Unit
+                -> {
+                    Unit
+                }
             }
         }
         return result

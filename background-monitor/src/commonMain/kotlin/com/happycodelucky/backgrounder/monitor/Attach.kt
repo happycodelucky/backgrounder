@@ -1,11 +1,15 @@
 package com.happycodelucky.backgrounder.monitor
 
+import co.touchlab.kermit.Logger
 import com.happycodelucky.backgrounder.Backgrounder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
+
+private val log = Logger.withTag("Backgrounder/Monitor")
 
 /**
  * Attach a [Monitor] to [Backgrounder.events]. The collector coroutine
@@ -22,11 +26,11 @@ import kotlin.native.ObjCName
  * `MutableSharedFlow` is hot and non-replaying — late attachers see
  * events emitted after their attach point, never before.
  *
- * **Cancellation.** If [Monitor.onEvent] throws or [scope] is cancelled,
- * the collector terminates. Throws inside [onEvent] propagate via the
- * collector's job and are surfaced through the scope's exception handler
- * (typically logged via Kermit if the scope's CoroutineExceptionHandler
- * routes there).
+ * **Exceptions.** A [Monitor.onEvent] that throws does **not** cancel the
+ * subscription, and never propagates into [scope] — a misbehaving monitor
+ * must not take down the caller's sibling jobs. The event is dropped and
+ * the error logged via Kermit. Cancellation (of [scope] or the returned
+ * [AttachedMonitor]) still tears the collector down normally.
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName(swiftName = "attach")
@@ -37,7 +41,15 @@ public fun Backgrounder.attachMonitor(
     val job =
         scope.launch {
             events().collect { event ->
-                monitor.onEvent(event)
+                try {
+                    monitor.onEvent(event)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (t: Throwable) {
+                    // Library boundary: never let user monitor code poison the
+                    // caller-supplied scope. Drop the event, keep collecting.
+                    log.e(t) { "Monitor.onEvent threw; event dropped, subscription continues" }
+                }
             }
         }
     return AttachedMonitor(job)

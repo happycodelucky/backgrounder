@@ -87,7 +87,7 @@ class InspectorApiTest {
     }
 
     @Test
-    fun ScheduledTask_defaults_pendingPredicates_to_empty() {
+    fun scheduledTaskDefaultsPendingPredicatesToEmpty() {
         val task =
             ScheduledTask(
                 taskId = taskA,
@@ -101,7 +101,7 @@ class InspectorApiTest {
     }
 
     @Test
-    fun PlatformDiagnostics_isHealthy_reflects_emptiness() {
+    fun platformDiagnosticsIsHealthyReflectsEmptiness() {
         assertTrue(PlatformDiagnostics.Healthy.isHealthy)
         assertTrue(PlatformDiagnostics(emptyList()).isHealthy)
         assertTrue(!PlatformDiagnostics(listOf(PlatformDiagnostic.RegistryNotSealed)).isHealthy)

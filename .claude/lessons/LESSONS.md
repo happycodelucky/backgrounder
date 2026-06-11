@@ -94,7 +94,7 @@ single grep finds them.
 ### B-011 — iOS `Keep` policy ran side effects before early-return — 2026-04
 **Cause:** `schedule()` added to `ephemeral` and fired `onScheduled` *before* the `Keep && active` early-return — metrics drifted, ephemeral state corrupted on no-op reschedule.
 **Fix:** Probe `state.readActive(...)` first; only on a real schedule do we mutate `ephemeral` and fire `onScheduled`. Same bug & fix in macOS `NSBackgroundActivityBackedScheduler`.
-**Ref:** PR #7, commit `393421b`.
+**Ref:** PR #7, commit `393421b`. 2026-06-10: the macOS "same fix" covered only the early-return path — the lock-recheck path regressed and was re-fixed; see B-022.
 
 ### B-012 — Android `cancel()` always returned `Cancelled(1)` — 2026-04
 **Cause:** No process-local id tracking; cancel of an unknown id reported success and fired `onCancelled` regardless.
@@ -140,6 +140,26 @@ single grep finds them.
 **Cause:** Read `Clock.System.now()` directly; tests' `runTest` virtual time can't reach it — tests were lying about timing.
 **Fix:** Dispatcher computes the backoff delay locally using the policy and adds to its **injected** `now` — no wall-clock read inside dispatcher math.
 **Ref:** commit `fa573fa`.
+
+### B-021 — `WorkerRegistry.create()` calls user factory inside `synchronized(lock)` — 2026-06-10
+**Cause:** Both per-id (`it()`) and bulk (`owningFactory.create(taskId)`) factory calls run while holding the registry's `SynchronizedObject` lock. Note: atomicfu's `SynchronizedObject` IS reentrant on K/N (verified against `Synchronized.kt` in kotlinx-atomicfu — `ownerThreadId` + `reEnterCount`), so a same-thread callback does *not* deadlock. The real costs: every concurrent dispatch across all TaskIds serializes behind arbitrary user code (slow factory stalls everything), and a factory that blocks on another thread needing the lock deadlocks.
+**Fix:** Capture the factory reference inside the lock, release the lock, then invoke the factory outside it. Landed 2026-06-10. Test: `WorkerRegistryTest.factoryCanCallBackIntoRegistryDuringCreate`.
+**Ref:** `WorkerRegistry.kt::create` (identified in commonMain review 2026-06-10).
+
+### B-022 — macOS `schedule()` fired side effects before the lock-recheck — 2026-06-10
+**Cause:** The H-3/B-011 fix covered only the Keep early-return; `ephemeral.add` + the `Scheduled` emit still ran *between* the probe and the final lock-recheck. Losing the recheck produced phantom `Scheduled` events and ghost ephemeral entries. A lesson's fix must be applied to **every** probe-then-recheck site, not just the one that bit.
+**Fix:** Single authoritative `synchronized` block decides + mutates (including `ephemeral`, mirroring `cancel()`); events emitted after the lock from the recorded decision.
+**Ref:** `NSBackgroundActivityBackedScheduler.kt::schedule`.
+
+### B-023 — iOS `submit` failure left a ghost `EphemeralRegistry` entry — 2026-06-10
+**Cause:** `schedule()` adds the ephemeral entry before submission; the `BGSubmitResult.Failure` branch cleared `IOSStateStore` but not the ephemeral marker — `scheduled()`/`diagnostics()` reported a ghost task until the next cold-launch sweep.
+**Fix:** `ephemeral.remove(taskId)` next to `state.clear(taskId)` in the failure branch. Test: `BGTaskBackedSchedulerSubmitFailureTest` (uses the new injectable `submitRequest` seam).
+**Ref:** `BGTaskBackedScheduler.kt::submit`.
+
+### B-024 — `WorkerRegistry.seal()` wrote the sealed flag outside the registry lock — 2026-06-10
+**Cause:** `register()` checks `sealed` inside `synchronized(lock)` but `seal()` wrote it lock-free — a register racing `start()` could slip in after the engine began installing OS handlers (on iOS: a registered worker whose BGTask handler never gets installed).
+**Fix:** `seal()` takes the same lock. One line.
+**Ref:** `WorkerRegistry.kt::seal`.
 
 ---
 
@@ -312,6 +332,11 @@ project — beyond CLAUDE.md §13's general hard rules. Section here is for the
 **Why:** Workers needing soft network policy can read `Reachability.shared` directly inside `execute()`. The library only gates on `WorkConstraints.networkRequired`; finer-grained logic is the worker's job. See D-003.
 **Ref:** PR #15, commit `89b63fb`.
 
+### N-013 — Never call ObjC/Foundation scheduling APIs while holding a Kotlin-side lock — 2026-06-10
+**Don't:** Call `scheduleWithBlock`, `submitTaskRequest`, or any Foundation/BackgroundTasks dispatch inside a `kotlinx.atomicfu.locks.synchronized` block.
+**Why:** Foundation takes internal locks of its own, and its callbacks re-enter Kotlin code that acquires ours — a lock-order cycle we can neither see nor control. Mutate the Kotlin-side maps under the lock, release, then make the ObjC call; a concurrent cancel/replace invalidates the activity first, making the late call a harmless no-op.
+**Ref:** `NSBackgroundActivityBackedScheduler.kt` (`schedule` / `handleOneShotRetry`), 2026-06-10 review.
+
 ---
 
 ## Troubleshooting (T)
@@ -348,6 +373,11 @@ match against what they're seeing.
 **Cause:** `WorkInfo` has 13+ constructor parameters and the order shifts across minor versions. Tests that build a `WorkInfo` directly break frequently.
 **Unstuck by:** Use the `WorkInfoView` projection — tests construct the projection, production maps `WorkInfo → WorkInfoView` once at the boundary. See D-006.
 **Ref:** PR #9, commit `035ac15`.
+
+### T-007 — Gradle fails at configuration with "SDK location not found" in a fresh worktree — 2026-06-10
+**Symptom:** Any `./gradlew` task dies in ~2s: `SDK location not found. Define a valid SDK location with an ANDROID_HOME environment variable or … local.properties`.
+**Cause:** `local.properties` is gitignored, so git worktrees (including `.claude/worktrees/*`) don't inherit it from the main checkout.
+**Unstuck by:** `cp <main-checkout>/local.properties <worktree>/local.properties` (SDK lives at `~/Library/Android/sdk`). Also: a piped `./gradlew … | tail` reports the *pipe's* exit code — check `BUILD SUCCESSFUL`/`FAILED` in the log, not just `$?`.
 
 ### T-006 — Pre-flight check says version is already on Maven Central, but the local literal looks newer — 2026-05-14
 **Symptom:** Release workflow `Verify version not already published` step fails on a version that should be brand new.

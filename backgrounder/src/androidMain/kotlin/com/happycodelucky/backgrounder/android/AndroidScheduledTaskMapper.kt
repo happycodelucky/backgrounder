@@ -96,16 +96,24 @@ internal object AndroidScheduledTaskMapper {
         val c = view.constraintsView
         if (c != null) {
             when (c.networkType) {
-                NetworkType.NOT_REQUIRED -> Unit
-                NetworkType.CONNECTED ->
+                NetworkType.NOT_REQUIRED -> {
+                    Unit
+                }
+
+                NetworkType.CONNECTED -> {
                     result.add(PendingPredicate.NetworkRequired(NetworkRequirement.Any))
-                NetworkType.UNMETERED ->
+                }
+
+                NetworkType.UNMETERED -> {
                     result.add(PendingPredicate.NetworkRequired(NetworkRequirement.Unmetered))
-                else ->
+                }
+
+                else -> {
                     // Other NetworkType values (NOT_ROAMING, METERED, TEMPORARILY_UNMETERED)
                     // aren't expressible via the cross-platform NetworkRequirement enum;
                     // surface them as "Any" rather than dropping silently.
                     result.add(PendingPredicate.NetworkRequired(NetworkRequirement.Any))
+                }
             }
             if (c.requiresCharging) {
                 result.add(PendingPredicate.RequiresCharging)
@@ -113,13 +121,19 @@ internal object AndroidScheduledTaskMapper {
         }
         if (nextRunHint != null && nextRunHint > Clock.System.now()) {
             when (state) {
-                ScheduledTask.State.Backoff ->
+                ScheduledTask.State.Backoff -> {
                     result.add(PendingPredicate.WaitingForBackoff(until = nextRunHint))
-                ScheduledTask.State.Pending ->
+                }
+
+                ScheduledTask.State.Pending -> {
                     result.add(PendingPredicate.WaitingForEarliestBeginDate(at = nextRunHint))
+                }
+
                 ScheduledTask.State.Running,
                 ScheduledTask.State.Blocked,
-                -> Unit
+                -> {
+                    Unit
+                }
             }
         }
         return result

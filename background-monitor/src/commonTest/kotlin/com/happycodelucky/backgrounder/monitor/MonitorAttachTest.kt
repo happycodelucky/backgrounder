@@ -46,74 +46,79 @@ class MonitorAttachTest {
         )
 
     @Test
-    fun attached_monitor_receives_events() = runTest {
-        val source = newSource()
-        val monitor = RecordingMonitor()
-        val attached = subscribe(this, source, monitor)
+    fun attached_monitor_receives_events() =
+        runTest {
+            val source = newSource()
+            val monitor = RecordingMonitor()
+            val attached = subscribe(this, source, monitor)
 
-        source.tryEmit(event())
-        source.tryEmit(event())
-        testScheduler.advanceUntilIdle()
+            source.tryEmit(event())
+            source.tryEmit(event())
+            testScheduler.advanceUntilIdle()
 
-        assertEquals(2, monitor.received.size)
-        assertTrue(attached.isActive)
-        attached.detach()
-    }
-
-    @Test
-    fun detach_stops_further_delivery() = runTest {
-        val source = newSource()
-        val monitor = RecordingMonitor()
-        val attached = subscribe(this, source, monitor)
-
-        source.tryEmit(event())
-        testScheduler.advanceUntilIdle()
-        attached.detach()
-        testScheduler.advanceUntilIdle()
-        source.tryEmit(event())
-        testScheduler.advanceUntilIdle()
-
-        assertEquals(1, monitor.received.size)
-        assertTrue(!attached.isActive)
-    }
+            assertEquals(2, monitor.received.size)
+            assertTrue(attached.isActive)
+            attached.detach()
+        }
 
     @Test
-    fun multiple_monitors_each_see_every_event() = runTest {
-        val source = newSource()
-        val m1 = RecordingMonitor()
-        val m2 = RecordingMonitor()
-        val a1 = subscribe(this, source, m1)
-        val a2 = subscribe(this, source, m2)
+    fun detach_stops_further_delivery() =
+        runTest {
+            val source = newSource()
+            val monitor = RecordingMonitor()
+            val attached = subscribe(this, source, monitor)
 
-        source.tryEmit(event())
-        testScheduler.advanceUntilIdle()
-        source.tryEmit(event())
-        testScheduler.advanceUntilIdle()
+            source.tryEmit(event())
+            testScheduler.advanceUntilIdle()
+            attached.detach()
+            testScheduler.advanceUntilIdle()
+            source.tryEmit(event())
+            testScheduler.advanceUntilIdle()
 
-        assertEquals(2, m1.received.size)
-        assertEquals(2, m2.received.size)
-        a1.detach()
-        a2.detach()
-    }
-
-    @Test
-    fun detach_is_idempotent() = runTest {
-        val source = newSource()
-        val attached = subscribe(this, source, RecordingMonitor())
-        attached.detach()
-        attached.detach() // must not throw
-        assertTrue(!attached.isActive)
-    }
+            assertEquals(1, monitor.received.size)
+            assertTrue(!attached.isActive)
+        }
 
     @Test
-    fun isActive_flips_false_after_detach() = runTest {
-        val source = newSource()
-        val attached = subscribe(this, source, RecordingMonitor())
-        assertTrue(attached.isActive)
-        attached.detach()
-        testScheduler.advanceUntilIdle()
-        assertTrue(!attached.isActive)
-    }
+    fun multiple_monitors_each_see_every_event() =
+        runTest {
+            val source = newSource()
+            val m1 = RecordingMonitor()
+            val m2 = RecordingMonitor()
+            val a1 = subscribe(this, source, m1)
+            val a2 = subscribe(this, source, m2)
+
+            source.tryEmit(event())
+            testScheduler.advanceUntilIdle()
+            source.tryEmit(event())
+            testScheduler.advanceUntilIdle()
+
+            assertEquals(2, m1.received.size)
+            assertEquals(2, m2.received.size)
+            a1.detach()
+            a2.detach()
+        }
+
+    @Test
+    fun detach_is_idempotent() =
+        runTest {
+            val source = newSource()
+            val attached = subscribe(this, source, RecordingMonitor())
+            attached.detach()
+            attached.detach() // must not throw
+            assertTrue(!attached.isActive)
+        }
+
+    @Test
+    fun isActive_flips_false_after_detach() =
+        runTest {
+            val source = newSource()
+            val attached = subscribe(this, source, RecordingMonitor())
+            assertTrue(attached.isActive)
+            attached.detach()
+            testScheduler.advanceUntilIdle()
+            assertTrue(!attached.isActive)
+        }
 
     /**
      * Mirrors the shape of the real `attachMonitor` extension's body, *and*

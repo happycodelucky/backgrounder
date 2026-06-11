@@ -1,9 +1,12 @@
 package com.happycodelucky.backgrounder.monitor
 
+import co.touchlab.kermit.Logger
 import com.happycodelucky.backgrounder.Backgrounder
 import com.happycodelucky.backgrounder.PlatformDiagnostics
 import com.happycodelucky.backgrounder.ScheduledTask
+import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -11,6 +14,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.experimental.ExperimentalObjCName
 import kotlin.native.ObjCName
 import kotlin.time.Duration
@@ -65,7 +69,13 @@ public class SnapshotPoller(
     @ObjCName(swiftName = "diagnostics")
     public val diagnostics: StateFlow<PlatformDiagnostics> get() = _diagnostics.asStateFlow()
 
-    private var loop: Job? = null
+    private val log = Logger.withTag("Backgrounder/Monitor/SnapshotPoller")
+
+    // Single-slot loop handle. `atomic` (not a plain `var`): start()/stop() are
+    // public API callable from any thread (ViewModel recreation, config change),
+    // and the read-cancel-write sequence must claim the slot atomically or a
+    // racing start() leaks an uncancellable loop.
+    private val loop = atomic<Job?>(null)
 
     /**
      * Begin polling on [scope]. Idempotent — calling twice is treated as a
@@ -75,25 +85,31 @@ public class SnapshotPoller(
      */
     @ObjCName(swiftName = "start")
     public fun start(scope: CoroutineScope): Job {
-        loop?.cancel()
+        // LAZY so the new loop can't poll before the displaced loop is retired.
         val job =
-            scope.launch {
+            scope.launch(start = CoroutineStart.LAZY) {
                 while (isActive) {
                     runCatching {
                         _scheduled.value = backgrounder.scheduled()
                         _diagnostics.value = backgrounder.diagnostics()
-                    } // swallow per-iteration errors — the poll resumes next tick.
+                    }.onFailure { t ->
+                        if (t is CancellationException) throw t
+                        // Swallow and poll again next tick — but never silently:
+                        // this is a diagnostics surface, and a quiet failure
+                        // defeats its purpose.
+                        log.e(t) { "poll failed; retrying next tick" }
+                    }
                     delay(interval)
                 }
             }
-        loop = job
+        loop.getAndSet(job)?.cancel()
+        job.start()
         return job
     }
 
     /** Stop polling. Idempotent. */
     @ObjCName(swiftName = "stop")
     public fun stop() {
-        loop?.cancel()
-        loop = null
+        loop.getAndSet(null)?.cancel()
     }
 }

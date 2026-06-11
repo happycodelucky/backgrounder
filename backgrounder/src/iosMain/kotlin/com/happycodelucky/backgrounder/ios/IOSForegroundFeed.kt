@@ -22,6 +22,7 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.CompletableJob
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -202,19 +203,18 @@ internal class IOSForegroundFeed(
     }
 
     private fun launchLoop() {
-        // Replace any existing loop atomically. If a previous loop is still
-        // alive (shouldn't happen normally — observer ordering should prevent
-        // it — but be defensive), cancel it first.
-        val previous = loopJob.value
+        // Replace any existing loop atomically: getAndSet wins the slot first,
+        // then the displaced loop (if alive) is cancelled. The read-check-write
+        // version of this raced with itself when start() was called off the
+        // main thread, leaking an uncancellable loop. LAZY start keeps the new
+        // loop from dispatching while the old one is still being retired.
+        val job = scope.launch(start = CoroutineStart.LAZY) { runLoop() }
+        val previous = loopJob.getAndSet(job)
         if (previous?.isActive == true) {
             log.w { "launchLoop: previous loop still active; cancelling" }
             previous.cancel(CancellationException("loop replaced"))
         }
-        val job =
-            scope.launch {
-                runLoop()
-            }
-        loopJob.value = job
+        job.start()
     }
 
     private suspend fun runLoop() {

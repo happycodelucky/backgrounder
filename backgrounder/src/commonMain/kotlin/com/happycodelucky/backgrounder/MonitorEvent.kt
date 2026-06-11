@@ -208,7 +208,9 @@ public sealed interface DeferralReason {
      * The task is in a backoff window — the library asked the OS to delay
      * until [until], but the OS fired early.
      */
-    public data class BackoffWindow(public val until: Instant?) : DeferralReason
+    public data class BackoffWindow(
+        public val until: Instant?,
+    ) : DeferralReason
 }
 
 /** Why a [MonitorEvent.Skipped] was emitted — structurally unrecoverable. */
@@ -241,8 +243,12 @@ public sealed interface AttemptFailureReason {
     public data object ExpiredByOS : AttemptFailureReason
 
     /** The factory threw while creating the worker. */
-    public data class FactoryThrew(public val cause: Throwable) : AttemptFailureReason
+    public data class FactoryThrew(
+        public val cause: Throwable,
+    ) : AttemptFailureReason
 
     /** [BackgroundWorker.execute] threw an uncaught exception. */
-    public data class WorkerThrew(public val cause: Throwable) : AttemptFailureReason
+    public data class WorkerThrew(
+        public val cause: Throwable,
+    ) : AttemptFailureReason
 }

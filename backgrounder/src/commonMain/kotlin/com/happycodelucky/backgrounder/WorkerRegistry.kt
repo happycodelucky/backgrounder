@@ -138,18 +138,29 @@ public class WorkerRegistry internal constructor() {
      * late registration after the platform has started dispatching work.
      */
     internal fun seal() {
-        sealed.value = true
+        // Under the same lock as register(): a register racing start() either
+        // lands before the seal or throws — it can never slip in after the
+        // platform has begun installing OS handlers (see B-024).
+        synchronized(lock) {
+            sealed.value = true
+        }
     }
 
-    internal fun create(taskId: TaskId): BackgroundWorker =
-        synchronized(lock) {
-            factories[taskId]?.let { return@synchronized it() }
-            val owningFactory =
+    internal fun create(taskId: TaskId): BackgroundWorker {
+        // Resolve under the lock, invoke OUTSIDE it (B-021). Factories are user
+        // code — running them while holding the registry lock serializes every
+        // concurrent dispatch behind the slowest factory, and deadlocks if a
+        // factory blocks on another thread that needs this lock.
+        val perId = synchronized(lock) { factories[taskId] }
+        if (perId != null) return perId()
+        val owningFactory =
+            synchronized(lock) {
                 factoryChain.firstOrNull { taskId in it.taskIds }
                     ?: throw NoFactoryRegisteredException(taskId)
-            owningFactory.create(taskId)
-                ?: throw FactoryDeclinedException(taskId)
-        }
+            }
+        return owningFactory.create(taskId)
+            ?: throw FactoryDeclinedException(taskId)
+    }
 
     private fun checkNotSealed() {
         check(!sealed.value) {
