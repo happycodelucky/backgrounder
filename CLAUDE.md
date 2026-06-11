@@ -385,6 +385,8 @@ We use **Touchlab's KMMBridge** to publish the Apple framework to pure-Swift SPM
 
 ## 12. Task workflow
 
+The KMP-specific agents (`kmp-pro`, `kmp-doc-writer`, `kmp-docs-sync`) and skills (`kmp-docs-author`, `review-loop`) live in `~/.agents/` and are symlinked into `~/.claude/`. They are user-global tooling — not checked into this repo.
+
 When starting any task:
 
 1. Read this file. Read `gradle/libs.versions.toml`. Skim [`.claude/lessons/LESSONS.md`](.claude/lessons/LESSONS.md) for prior bugs, decisions, never-dos, and troubleshooting notes relevant to the task.

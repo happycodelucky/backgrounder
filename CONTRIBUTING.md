@@ -12,7 +12,7 @@ Open an issue on [GitHub](https://github.com/happycodelucky/backgrounder/issues)
 
 ### Toolchain (mise)
 
-[`mise`](https://mise.jdx.dev) pins every non-Gradle build dep: JDK, the Gradle bootstrap binary, Python (for the docs toolchain), and `gh`. Versions live in [`/mise.toml`](https://github.com/happycodelucky/backgrounder/blob/main/mise.toml) and match what CI runs.
+[`mise`](https://mise.jdx.dev) pins every non-Gradle build dep: JDK, the Gradle bootstrap binary, Python (for the docs toolchain), and `gh`. Versions live in [`/mise.toml`](mise.toml) and match what CI runs.
 
 ```bash
 brew install mise        # one-time, any directory
