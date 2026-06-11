@@ -5,8 +5,9 @@ The Android AAR is consumed directly from Gradle. Apple consumers come in via
 the same artifact's `iosArm64`, `iosSimulatorArm64`, and `macosArm64` klibs —
 i.e. by depending on `:backgrounder` from a KMP project.
 
-A native Swift Package Manager distribution is planned for a later release
-(see [Apple-side SPM](#apple-side-spm-roadmap) below).
+Pure-Swift apps (no Kotlin Multiplatform in the project) consume Backgrounder
+through Swift Package Manager — a prebuilt, SKIE-enhanced `Backgrounder.xcframework`
+delivered as a GitHub Release asset (see [Apple-side SPM](#apple-side-spm) below).
 
 ## Platform floors
 
@@ -109,32 +110,52 @@ The library logs an error during `backgrounder.start()` for any task
 id missing from this list — failing close to the cause rather than at first
 `schedule()`.
 
-## Apple-side SPM (roadmap)
+## Apple-side SPM
 
-There's no standalone `.xcframework` or `Package.swift` published yet.
-Pure-Swift apps that don't already use Kotlin Multiplatform can't consume the
-library directly at the moment. A native SPM distribution — a prebuilt
-`XCFramework` referenced from a dedicated SPM repository — is on the
-roadmap for a later release.
+Pure-Swift apps consume Backgrounder through Swift Package Manager. In Xcode,
+**File → Add Package Dependencies…**, enter this repo's URL, and pin to a
+version tag:
 
-If you're working from a KMP project today, the iOS / macOS targets are
-already consumed transparently via the published `kotlinMultiplatform`
-metadata, as described above.
+```
+https://github.com/happycodelucky/backgrounder.git
+```
+
+The tagged `Package.swift` hands SPM a prebuilt `Backgrounder.xcframework`
+(iosArm64 + iosSimulatorArm64 + macosArm64, SKIE-enhanced) referenced by URL
++ sha256 checksum from a GitHub Release asset. No Kotlin toolchain, no Gradle,
+no authentication. Under the hood this is built by
+[KMMBridge](https://kmmbridge.touchlab.co/) — GitHub *Releases*, not GitHub
+*Packages*, because Packages requires a PAT even to download from public repos.
+
+!!! note "First release"
+    SPM consumption starts at the first published version tag. Until the first
+    release runs, the committed `Package.swift` points at a local build path
+    (for the in-repo sample apps).
+
+If you're working from a KMP project instead, the iOS / macOS targets are
+consumed transparently via the published `kotlinMultiplatform` metadata, as
+described above — no XCFramework involved.
 
 ## Local development override
 
-When developing against an unpublished version of Backgrounder, build the
-`XCFramework` locally and point your iOS / macOS app at the build output:
+When developing against an unpublished version of Backgrounder, flip the root
+`Package.swift` to a local `.binaryTarget(path:)` and rebuild the debug
+`XCFramework` in one step:
 
 ```bash
-# In the Backgrounder repo (raw Gradle, or `mise run xcframework` if you use mise):
-./gradlew :backgrounder:assembleBackgrounderXCFramework
-# → backgrounder/build/XCFrameworks/release/Backgrounder.xcframework
+# In the Backgrounder repo:
+mise run spm:dev          # → ./gradlew :backgrounder:spmDevBuild
 ```
 
-Xcode picks up the local `XCFramework` on the next build — no publish step
-needed. For a KMP consumer, `./gradlew :backgrounder:publishToMavenLocal`
-plus `mavenLocal()` on the consumer's repository list works the same way.
+This rewrites `Package.swift` to point at
+`backgrounder/build/XCFrameworks/debug/Backgrounder.xcframework`, so the in-repo
+sample apps (and any app consuming this repo via `.package(path: "..")`) pick up
+local Kotlin edits — Xcode rebuilds against the new binary on the next build, no
+publish step needed. The rewrite is a working-tree convenience; **never commit
+it.** Restore the committed (released) manifest with `mise run spm:restore`.
+
+For a KMP consumer, `./gradlew :backgrounder:publishToMavenLocal` plus
+`mavenLocal()` on the consumer's repository list works the same way.
 
 ## Verify the install
 

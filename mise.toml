@@ -23,7 +23,8 @@
 #   mise run check       — what CI runs (lint + every test on every target)
 #   mise run framework   — link iOS arm64 debug framework with SKIE
 #   mise run xcframework — release XCFramework (all slices)
-#   mise run spm:dev     — rebuild debug XCFramework for root Package.swift (sample apps)
+#   mise run spm:dev     — rebuild debug XCFramework + flip Package.swift to local path
+#   mise run spm:restore — restore the committed (released) Package.swift
 #   mise run ci          — exact CI sequence locally
 #   mise run docs:serve  — local mkdocs preview at http://localhost:8000
 #   mise run format      — auto-fix ktlint findings
@@ -88,15 +89,24 @@ description = "Build the release XCFramework (all slices — iosArm64, iosSimula
 run = "./gradlew :backgrounder:assembleBackgrounderXCFramework"
 
 # ── Iteration helpers ───────────────────────────────────────────────────────
-# Fast inner-loop for sample-app consumers. The root Package.swift declares a
-# `.binaryTarget(path: "backgrounder/build/XCFrameworks/debug/Backgrounder.xcframework")`
-# so iOSApp / macOSApp can resolve the framework via `.package(path: "..")`.
-# This task rebuilds that debug artifact; Xcode picks up the new binary the
-# next time the scheme is built — no publish step needed.
 
 [tasks."spm:dev"]
-description = "Rebuild the debug XCFramework that the root Package.swift references (local sample-app consumption)"
-run = "./gradlew :backgrounder:assembleBackgrounderDebugXCFramework"
+description = "Rebuild the debug Backgrounder.xcframework and point /Package.swift at it (local dev mode)."
+# KMMBridge's `spmDevBuild` builds the debug XCFramework and REWRITES the
+# root /Package.swift to a `.binaryTarget(path: …)` pointing at
+# `backgrounder/build/XCFrameworks/debug/Backgrounder.xcframework`, so the
+# sample apps pick up local Kotlin edits without Gradle inside Xcode.
+#
+# After the first tagged release, the committed Package.swift is the
+# *released* form — a remote `.binaryTarget(url:checksum:)` against the
+# GitHub Release asset, written by the release workflow (CLAUDE.md §9).
+# The local-dev rewrite is a working-tree-only convenience: do NOT commit
+# it. `mise run spm:restore` puts the committed version back.
+run = "./gradlew :backgrounder:spmDevBuild"
+
+[tasks."spm:restore"]
+description = "Restore the committed (released) /Package.swift after spm:dev rewrote it."
+run = "git restore Package.swift"
 
 # ── Test ───────────────────────────────────────────────────────────────────
 
