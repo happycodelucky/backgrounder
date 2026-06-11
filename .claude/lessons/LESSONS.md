@@ -294,6 +294,11 @@ reader would not infer from the code. Capture the **decision** and the
 **Why over the obvious alternative:** A uniform "never restart anywhere" contract required fighting WorkManager's core durability model — discarding real resilience to buy cross-platform sameness nobody benefits from. Honouring each platform's native semantics costs one doc paragraph; imitating resilience on Apple platforms (or suppressing it on Android) costs correctness machinery and surprises platform-native developers.
 **Ref:** owner decisions 2026-06-11 (both directions — see git history of PR #30 for the built-then-reverted suppression). Test: `IOSOneShotReconciliationTest`. Docs: `docs/concepts/guarantees.md` § Process death.
 
+### D-023 — README banner: self-contained SVG pair, evergreen subtitle — 2026-06-11
+**Decision:** The README hero is `docs/assets/banner-{light,dark}.svg` — logo shapes *inlined* (GitHub's camo proxy blocks external refs and webfonts inside `<img>`-rendered SVGs), text via GitHub's own system-font stack, theme-switched with the `<picture>`/`prefers-color-scheme` pattern. The baked-in subtitle is "One Kotlin Multiplatform API for background work." — deliberately no platform roster, no badges, no versions, so the image never goes stale (wasm may join the targets).
+**Why over the obvious alternative:** A PNG banner can't theme-switch palettes cleanly, bloats the repo, and blurs on retina; referencing `logo-*.svg` from inside the banner renders blank on GitHub. Mutable facts (platforms, versions, CI state) stay in markdown badges/text where they're cheap to edit.
+**Ref:** `docs/assets/banner-light.svg`, `docs/assets/banner-dark.svg`, README header.
+
 ---
 
 ## NEVER DO (N)

@@ -1,0 +1,54 @@
+<svg width="1200" height="320" viewBox="0 0 1200 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Backgrounder — one Kotlin Multiplatform API for background work">
+  <title>Backgrounder — one Kotlin Multiplatform API for background work</title>
+  <defs>
+    <linearGradient id="card-bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#14181F"/>
+      <stop offset="1" stop-color="#1B212C"/>
+    </linearGradient>
+    <radialGradient id="lockup-glow" cx="0.42" cy="0.5" r="0.55">
+      <stop offset="0" stop-color="#57688E" stop-opacity="0.14"/>
+      <stop offset="1" stop-color="#57688E" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="card-clip">
+      <rect x="0.75" y="0.75" width="1198.5" height="318.5" rx="23.25"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#card-clip)">
+    <rect x="0" y="0" width="1200" height="320" fill="url(#card-bg)"/>
+    <rect x="0" y="0" width="1200" height="320" fill="url(#lockup-glow)"/>
+
+    <!-- Watermark, top-left: a window's bottom corner drifting out of frame. -->
+    <g>
+      <rect x="-310" y="-160" width="410" height="230" rx="30" fill="#4D5A78" opacity="0.14"/>
+      <rect x="-340" y="-120" width="520" height="330" rx="34" fill="none" stroke="#8FA0C4" stroke-opacity="0.12" stroke-width="2"/>
+    </g>
+
+    <!-- Watermark, bottom-right: the logo motif oversized and cropped by the card edge. -->
+    <g>
+      <rect x="1114" y="50" width="300" height="170" rx="22" fill="#57688E" opacity="0.16"/>
+      <rect x="1088" y="74" width="350" height="200" rx="26" fill="#4D5A78" opacity="0.24"/>
+      <rect x="1056" y="104" width="410" height="230" rx="30" fill="#434B5E" opacity="0.34"/>
+      <rect x="1020" y="150" width="520" height="330" rx="34" fill="none" stroke="#8FA0C4" stroke-opacity="0.20" stroke-width="2"/>
+      <circle cx="1052" cy="178" r="9.5" fill="none" stroke="#8FA0C4" stroke-opacity="0.20" stroke-width="2"/>
+      <circle cx="1080" cy="178" r="9.5" fill="none" stroke="#8FA0C4" stroke-opacity="0.20" stroke-width="2"/>
+      <circle cx="1108" cy="178" r="9.5" fill="none" stroke="#8FA0C4" stroke-opacity="0.20" stroke-width="2"/>
+    </g>
+
+    <!-- Logo, inlined from docs/assets/logo-dark.svg (GitHub blocks external refs in img-rendered SVGs). -->
+    <g transform="translate(154, 19.15) scale(0.55)">
+      <rect x="157" y="107" width="198" height="120" rx="14" fill="#57688E" opacity="0.35"/>
+      <rect x="141" y="121" width="230" height="140" rx="16" fill="#4D5A78" opacity="0.55"/>
+      <rect x="122" y="142" width="268" height="160" rx="18" fill="#434B5E" opacity="0.80"/>
+      <rect x="100" y="173" width="312" height="232" rx="22" fill="#383B44" stroke="#FFFFFF" stroke-opacity="0.14" stroke-width="1.5"/>
+      <circle cx="128" cy="199" r="8.5" fill="#FF5F57"/>
+      <circle cx="156" cy="199" r="8.5" fill="#FEBC2E"/>
+      <circle cx="184" cy="199" r="8.5" fill="#28C840"/>
+    </g>
+
+    <text x="427" y="153" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="60" font-weight="700" letter-spacing="-1" fill="#E8EDF4">Backgrounder</text>
+    <text x="427" y="205" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="23" font-weight="400" fill="#9AA5B3">One Kotlin Multiplatform API for background work.</text>
+  </g>
+
+  <rect x="0.75" y="0.75" width="1198.5" height="318.5" rx="23.25" fill="none" stroke="#FFFFFF" stroke-opacity="0.12" stroke-width="1.5"/>
+</svg>

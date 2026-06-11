@@ -1,14 +1,8 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
-    <img src="docs/assets/logo-light.svg" width="180" alt="Backgrounder logo — a window in focus, with background work receding behind it">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/banner-dark.svg">
+    <img src="docs/assets/banner-light.svg" alt="Backgrounder — one Kotlin Multiplatform API for background work. A macOS window in focus, with background work receding behind it.">
   </picture>
-</p>
-
-<h1 align="center">Backgrounder</h1>
-
-<p align="center">
-  One Kotlin Multiplatform API for background work on Android, iOS, and macOS.
 </p>
 
 <p align="center">
