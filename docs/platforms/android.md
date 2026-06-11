@@ -69,7 +69,7 @@ In practice this means: **construct `backgrounder` before `super.onCreate()` ret
 
 - `RegistryDispatchWorker` (the single Worker class registered with WorkManager) is dispatched on WorkManager's executor — effectively `Dispatchers.Default`.
 - The worker's `execute()` runs on a coroutine that inherits that dispatcher; switch with `withContext(Dispatchers.IO)` for blocking IO.
-- Logs from inside the worker are tagged `Backgrounder/<taskId>` (Kermit) and the thread is named `Backgrounder/<taskId>` for the duration of `execute()`. This is the mitigation for the single-bridge-worker design — every log includes the task id even though the Worker class is the same for every task.
+- Logs from inside the worker are tagged `Backgrounder/<taskId>` and the thread is named `Backgrounder/<taskId>` for the duration of `execute()`. This is the mitigation for the single-bridge-worker design — every log includes the task id even though the Worker class is the same for every task.
 
 ## Multi-process apps
 

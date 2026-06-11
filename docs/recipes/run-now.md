@@ -88,7 +88,7 @@ try {
 }
 ```
 
-The platform layer reports `WorkResult.Failure(message)` to the OS (so iOS / WorkManager don't think the process crashed); the caller sees the original exception. `CancellationException` flows through SKIE as Swift's `CancellationError`.
+The platform layer reports `WorkResult.Failure(message)` to the OS (so iOS / WorkManager don't think the process crashed); the caller sees the original exception. `CancellationException` surfaces in Swift as the native `CancellationError`.
 
 ## Platform notes
 

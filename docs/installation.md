@@ -91,8 +91,8 @@ transparently via the `kotlinMultiplatform` metadata published alongside the
 Android AAR. Depend on `:backgrounder` from `commonMain` exactly as shown in
 the [Gradle — Kotlin Multiplatform consumer](#gradle-kotlin-multiplatform-consumer)
 section above; KMP resolves the `iosArm64`, `iosSimulatorArm64`, and
-`macosArm64` slices for you. SKIE bridging happens at your project's framework
-build time, not the library's.
+`macosArm64` slices for you. The Swift-facing framework is produced by your
+own project's framework build, not the library's.
 
 Add the tick identifier plus one entry per `WorkRequest.OneTime` task id you
 schedule to your app's `Info.plist`:
@@ -105,7 +105,7 @@ schedule to your app's `Info.plist`:
 </array>
 ```
 
-The library reports a Kermit error during `backgrounder.start()` for any task
+The library logs an error during `backgrounder.start()` for any task
 id missing from this list — failing close to the cause rather than at first
 `schedule()`.
 
@@ -113,8 +113,8 @@ id missing from this list — failing close to the cause rather than at first
 
 There's no standalone `.xcframework` or `Package.swift` published yet.
 Pure-Swift apps that don't already use Kotlin Multiplatform can't consume the
-library directly at the moment. A native SPM distribution — a KMMBridge-style
-`XCFramework` flowing through Maven and a dedicated SPM repository — is on the
+library directly at the moment. A native SPM distribution — a prebuilt
+`XCFramework` referenced from a dedicated SPM repository — is on the
 roadmap for a later release.
 
 If you're working from a KMP project today, the iOS / macOS targets are

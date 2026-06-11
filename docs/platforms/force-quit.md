@@ -32,7 +32,7 @@ Concrete patterns:
 
 - **Time-sensitive sync** (e.g. "your inbox refreshed at 9 AM"): set the user's expectation to "throughout the day" rather than wall-clock cadence.
 - **One-shot uploads**: queue them, but warn "Uploads paused — tap to resume" if the user has force-quit and re-launched.
-- **Long-running jobs**: don't promise completion in background. iOS has no equivalent of Android's `setForeground` for arbitrary work; the closest is `BGContinuedProcessingTaskRequest` (iOS 17+, requires foreground init), which is on the v2 roadmap.
+- **Long-running jobs**: don't promise completion in background. iOS has no equivalent of Android's `setForeground` for arbitrary work; the closest is `BGContinuedProcessingTaskRequest` (iOS 26+, must be submitted while the app is foregrounded), which is on the v2 roadmap.
 
 ## What to *not* do
 
@@ -43,14 +43,14 @@ Concrete patterns:
 ## What the library does
 
 - Reports `survivesForceQuit = false` from `Backgrounder.guarantees()`.
-- Logs a Kermit warning at info level if a periodic schedule's expected next-run is more than 24 hours stale on `backgrounder.start()` — likely sign of force-quit-then-relaunch.
-- Resurrects active periodic schedules at next cold launch via `BGTaskScheduler.submit`. Force-quit drops the OS's pending-request set; the library re-submits.
+- Resurrects active periodic schedules at next cold launch: force-quit drops the OS's pending-request set, so `backgrounder.start()` re-anchors each active periodic's next run and re-submits the tick request.
+- Coalesces missed cycles rather than catching up — a periodic that's overdue by several intervals runs once on resurrection, not once per missed interval.
 
 ## On Android and macOS
 
-Force-quit is **not** an issue:
+Force-quit does **not** cause the iOS blacklisting problem:
 
 - **Android.** `survivesForceQuit = true`. `WorkManager` survives force-stop (the user explicitly *force-stopping* an app via Settings does cancel work; that's a separate, more deliberate user action).
-- **macOS.** `survivesForceQuit = true`. `NSBackgroundActivityScheduler` re-establishes on the next app launch.
+- **macOS.** `survivesForceQuit = false`. `NSBackgroundActivityScheduler` is in-process — schedules die with the process, the library does not persist them across launches, and nothing relaunches the app automatically. Unlike iOS, macOS does not blacklist the app from future background dispatch: re-schedule from your app's init path at the next launch and work resumes normally.
 
-So this whole page is iOS-specific. Read it before shipping; surface it in your UX; move on.
+So the iOS blacklisting behaviour described above is iOS-specific. Read it before shipping; surface it in your UX; move on.

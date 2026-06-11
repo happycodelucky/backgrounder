@@ -6,7 +6,7 @@ Open an issue on [GitHub](https://github.com/happycodelucky/backgrounder/issues)
 
 - Your platform target (Android API level, iOS version, macOS version) and Kotlin/Gradle versions.
 - A minimal reproducer — ideally a `BackgroundWorker` + a `WorkRequest` + the observed behaviour.
-- The Kermit log output around the failure (search for `Backgrounder/<taskId>` lines).
+- The log output around the failure (search for `Backgrounder/<taskId>` lines).
 
 ## Development environment
 
@@ -24,7 +24,7 @@ After that, the `mise run …` task surface (below) is the recommended entry poi
 
 ### Other prerequisites
 
-- Latest stable Xcode that the pinned SKIE version supports — see [SKIE releases](https://github.com/touchlab/SKIE/releases). Xcode is not managed by mise; install it yourself.
+- Latest stable Xcode that the pinned Kotlin toolchain supports (see `gradle/libs.versions.toml`). Xcode is not managed by mise; install it yourself.
 - Android SDK with command-line tools; `local.properties` should set `sdk.dir`.
 
 ## Building locally
@@ -35,7 +35,7 @@ The mise tasks below wrap `./gradlew` — pick whichever surface you prefer.
 mise run check          # ktlint + every unit test (iOS sim, macOS, Android host)
 mise run build:ios      # iOS device + Apple Silicon simulator debug frameworks
 mise run build:macos    # macOS desktop debug framework
-mise run xcframework    # release Backgrounder.xcframework (KMMBridge artifact)
+mise run xcframework    # release Backgrounder.xcframework
 mise run build:android  # Android AAR
 
 # Raw Gradle equivalents, for reference:
@@ -52,10 +52,10 @@ Run `mise tasks` to list every task.
 A few binding repo conventions worth knowing before you open a PR:
 
 - **Versions live in `gradle/libs.versions.toml`** — single source of truth. Web-search the latest stable before bumping any version.
-- **Kotlin is pinned at the highest version SKIE supports** — currently 2.3.20 with SKIE 0.10.11. SKIE compatibility wins over the nominal version floor.
+- **Kotlin is pinned to the highest version the Swift-interop toolchain supports** — check `gradle/libs.versions.toml` before bumping; interop compatibility wins over the nominal version floor.
 - **Apple platform-name casing is preserved in identifiers** — `IOSCoroutineBridge`, not `IosCoroutineBridge`.
 - **`internal` by default**; widen visibility only when needed.
-- **Every `suspend fun` reachable from Swift** carries `@Throws(CancellationException::class)`; every public method carries `@ObjCName(swiftName = ...)`.
+- **Every public `suspend fun` reachable from Swift** carries `@Throws(...)` listing the domain exceptions it can actually throw — never `CancellationException`, which bridges to Swift's native `CancellationError` automatically. Public methods carry `@ObjCName(swiftName = ...)` so the Swift call site reads like Swift.
 
 ## Building the docs site
 
