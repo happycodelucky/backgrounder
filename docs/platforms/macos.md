@@ -46,9 +46,9 @@ The library inserts a pre-execution **reachability gate** that waits up to `min(
 
 macOS doesn't need the iOS periodic-emulation state machine. `NSBackgroundActivityScheduler` has `repeats = true`, `interval`, and `tolerance` (mapped from `WorkRequest.Periodic.flexWindow`). The library hands the OS a single repeating activity per task id and lets it dispatch.
 
-## Force-quit isn't a problem
+## Force-quit on macOS
 
-Unlike iOS, force-quitting a macOS app doesn't disable background scheduling for the next launch. The active schedulers re-establish themselves when the user re-launches the app and `backgrounder.start()` runs again.
+`survivesForceQuit = false` — `NSBackgroundActivityScheduler` is in-process; all registered activities die with the process, and the library does not persist schedules across launches on macOS. Unlike iOS, macOS does **not** blacklist the app from future background dispatch: anything you schedule after relaunch dispatches normally. Re-schedule from your app's init path after `backgrounder.start()` at each launch.
 
 ## Shutdown
 
