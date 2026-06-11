@@ -22,12 +22,10 @@ Read carefully:
 
 ## Process death
 
-The contract is the same on every platform:
-
 1. **In-flight work gets to try to complete** — the library never preemptively kills a running worker.
-2. **A run interrupted by process death is dead.** The library makes no attempt to restart that transaction. On Android — where WorkManager would otherwise re-run a death-interrupted worker — the library detects the interrupted attempt at the next dispatch and terminates it (`SkipReason.PreviousAttemptDiedWithProcess`). On iOS, a one-shot whose `BGTask` died mid-run is cleared from the state store at the next `start()`. A periodic's *schedule* survives where the platform persists it; only the interrupted cycle is lost (see [missed cycles](../recipes/periodic.md)).
-3. **Scheduled-but-never-started work is not "interrupted".** Where the platform persists it (Android WorkManager; iOS pending `BGTaskRequest`s), it may start later in a new process and complete normally.
-4. **Ephemeral work is purged** at the next launch before anything can dispatch — see [the `ephemeral` flag](ephemeral.md).
+2. **The platform's own resilience is honoured — and never imitated.** On Android, WorkManager may re-dispatch a worker whose process died mid-run; if Android can complete the work, it should — the library does not suppress that. iOS and macOS offer no such resilience, and the library adds none: a run that died with its process is never replayed. On iOS, a one-shot whose `BGTask` died mid-run is additionally cleared from the state store at the next `start()` so its ghost can't block future `ConflictPolicy.Keep` schedules.
+3. **Scheduled-but-never-started work is not "interrupted".** Where the platform persists it (Android WorkManager; iOS pending `BGTaskRequest`s), it may start later in a new process and complete normally. A periodic's *schedule* survives where the platform persists it; only the interrupted cycle is lost (see [missed cycles](../recipes/periodic.md)).
+4. **Ephemeral work is purged** at the next launch before anything can dispatch, on every platform — see [the `ephemeral` flag](ephemeral.md).
 
 ## Branching UX on guarantees
 

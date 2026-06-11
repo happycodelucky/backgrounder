@@ -27,7 +27,6 @@ internal class BackgrounderWorkerFactory(
     private val emitter: MonitorEventEmitter,
     private val readyGate: kotlinx.atomicfu.AtomicBoolean,
     private val pendingInstantCalls: PendingInstantCalls,
-    private val inFlight: InFlightMarkers,
 ) : WorkerFactory() {
     override fun createWorker(
         appContext: Context,
@@ -41,7 +40,7 @@ internal class BackgrounderWorkerFactory(
         // load the class on every dispatch which we don't need.
         return when (workerClassName) {
             RegistryDispatchWorker::class.java.name -> {
-                RegistryDispatchWorker(appContext, workerParameters, registry, emitter, readyGate, inFlight)
+                RegistryDispatchWorker(appContext, workerParameters, registry, emitter, readyGate)
             }
 
             InstantDispatchWorker::class.java.name -> {
