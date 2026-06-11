@@ -45,6 +45,9 @@ internal object AndroidBackgrounderBuilder {
                 application.getSharedPreferences("backgrounder.prefs", Context.MODE_PRIVATE),
             )
         val ephemeral = EphemeralRegistry(settings)
+        // Death-interrupted-run detection (D-020/D-022) — shares the prefs file
+        // with the ephemeral registry; distinct key prefix.
+        val inFlight = InFlightMarkers(settings)
         val registry = WorkerRegistry()
 
         // Eager ephemeral sweep — first thing we do, before any worker can fire.
@@ -86,7 +89,7 @@ internal object AndroidBackgrounderBuilder {
         val pendingInstantCalls = PendingInstantCalls()
         val instantRunner = WorkManagerInstantRunner(workManagerProvider, pendingInstantCalls)
 
-        val factory = BackgrounderWorkerFactory(registry, emitter, readyGate, pendingInstantCalls)
+        val factory = BackgrounderWorkerFactory(registry, emitter, readyGate, pendingInstantCalls, inFlight)
 
         val backgrounder =
             Backgrounder(

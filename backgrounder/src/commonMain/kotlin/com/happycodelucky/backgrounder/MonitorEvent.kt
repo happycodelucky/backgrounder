@@ -250,6 +250,18 @@ public sealed interface SkipReason {
      * [WorkerRegistry.FactoryDeclinedException].
      */
     public data object FactoryDeclined : SkipReason
+
+    /**
+     * A previous attempt for this task id was interrupted by process death.
+     *
+     * Per the library's process-death contract the transaction dies with the
+     * process — the library never restarts it. Android-only in practice:
+     * WorkManager re-runs a worker whose process died mid-execution, and this
+     * skip is how that re-run terminates. Scheduled-but-never-started work is
+     * unaffected — it was not interrupted and runs normally when the platform
+     * dispatches it.
+     */
+    public data object PreviousAttemptDiedWithProcess : SkipReason
 }
 
 /** Why a [MonitorEvent.AttemptFailed] was emitted. */

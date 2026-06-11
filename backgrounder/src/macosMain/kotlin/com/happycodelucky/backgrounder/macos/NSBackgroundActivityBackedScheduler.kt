@@ -499,9 +499,15 @@ internal class NSBackgroundActivityBackedScheduler(
 
 private val MACOS_GUARANTEES =
     SchedulerGuarantees(
-        survivesProcessDeath = true,
-        survivesReboot = true,
-        survivesForceQuit = true,
+        // NSBackgroundActivityScheduler is in-process: registered activities die
+        // with the process — nothing survives quit, force-quit, or reboot, and
+        // nothing relaunches the app. The previous `true` values misadvertised
+        // (B-027). Apps re-schedule from their own init path at next launch;
+        // the process-death contract (D-020/D-022) means the library never
+        // replays a run that died with its process.
+        survivesProcessDeath = false,
+        survivesReboot = false,
+        survivesForceQuit = false,
         honoursWallClock = true, // approximately — CTS may delay.
         supportsRetryBackoff = true,
         cancelsInFlight = true,

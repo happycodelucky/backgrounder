@@ -43,6 +43,7 @@ internal class RegistryDispatchWorker(
     private val registry: WorkerRegistry,
     private val emitter: MonitorEventEmitter,
     private val readyGate: kotlinx.atomicfu.AtomicBoolean,
+    private val inFlight: InFlightMarkers,
 ) : CoroutineWorker(context, params) {
     private val log = Logger.withTag("Backgrounder")
 
@@ -61,6 +62,24 @@ internal class RegistryDispatchWorker(
         val originalThreadName = Thread.currentThread().name
         renameThread("Backgrounder/$taskId")
         try {
+            // Process-death contract (D-020/D-022): a previous attempt for this
+            // id that died with its process is NOT restarted — the transaction
+            // died with it. WorkManager re-runs death-interrupted workers as
+            // part of its durability model; this terminates that re-run. Work
+            // that never started carries no marker and proceeds normally.
+            if (inFlight.wasInterrupted(taskId)) {
+                inFlight.clear(taskId)
+                tagged.w { "previous attempt died with its process; not restarting (terminal)" }
+                emitter.emit(
+                    MonitorEvent.Skipped(
+                        taskId = taskId,
+                        at = Clock.System.now(),
+                        reason = SkipReason.PreviousAttemptDiedWithProcess,
+                    ),
+                )
+                return AndroidResult.failure()
+            }
+
             val ephemeral = AndroidWorkInputMapper.readEphemeral(inputData)
             val ready = readyGate.value
             // Process-death contract (all platforms): ephemeral work is PURGED,
@@ -159,6 +178,11 @@ internal class RegistryDispatchWorker(
                         ),
                 )
 
+            // Marker brackets execute() only: every in-process completion path
+            // (Success / Failure / Retry / worker threw / WorkManager stop →
+            // CancellationException) clears it in the finally; only process
+            // death leaves it behind for the re-run check above.
+            inFlight.markStarted(taskId)
             var workerThrew: Throwable? = null
             val result: WorkResult =
                 try {
@@ -170,6 +194,8 @@ internal class RegistryDispatchWorker(
                     tagged.e(t) { "[$taskId] threw; treating as Retry" }
                     workerThrew = t
                     WorkResult.Retry
+                } finally {
+                    inFlight.clear(taskId)
                 }
 
             workerThrew?.let { cause ->

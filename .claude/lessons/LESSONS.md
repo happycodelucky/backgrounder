@@ -171,6 +171,11 @@ single grep finds them.
 **Fix:** Doc now states the purge/no-retry contract; the misleading `RegistryDispatchWorker` log line ("retry will happen after init completes") fixed in the same pass.
 **Ref:** `docs/concepts/ephemeral.md`, `RegistryDispatchWorker.kt`.
 
+### B-027 — macOS `SchedulerGuarantees` claimed schedules survive process death / reboot / force-quit — 2026-06-11
+**Cause:** `MACOS_GUARANTEES` shipped `survivesProcessDeath/Reboot/ForceQuit = true`. `NSBackgroundActivityScheduler` is in-process — registered activities die with the process and nothing relaunches the app. The public `guarantees()` API (and the docs table mirroring it) misadvertised durability that doesn't exist.
+**Fix:** All three flags `false`, with the in-process rationale at the declaration; `docs/concepts/guarantees.md` table corrected.
+**Ref:** `NSBackgroundActivityBackedScheduler.kt::MACOS_GUARANTEES`.
+
 ---
 
 ## Novel design decisions (D)
@@ -283,6 +288,11 @@ reader would not infer from the code. Capture the **decision** and the
 **Decision:** Public event payloads that carry a `Throwable` (`MonitorEvent.LibraryError`, `AttemptFailureReason.FactoryThrew` / `WorkerThrew`) keep the raw `cause` for Kotlin consumers but `@HiddenFromObjC` it, exposing `causeMessage: String?` + `causeType: String?` (computed defaults) for Swift.
 **Why over the obvious alternative:** Dropping `cause` entirely punishes Kotlin consumers (loses stack traces); leaving it visible gives Swift an opaque `KotlinThrowable` (N-009 root cause). Hidden-plus-bridged-strings serves both. Residual wart: `copy()` / `componentN()` still mention the Kotlin type — acceptable, consumers don't construct events.
 **Ref:** `MonitorEvent.kt`; pattern follows B-015 (`@HiddenFromObjC` + Swift-friendly alternative).
+
+### D-022 — A run interrupted by process death is never restarted — 2026-06-11
+**Decision:** Refines D-020 to all work, not just ephemeral. In-flight work may try to complete; a run brought down by process death is dead — no platform restarts it. Scheduled-but-never-started work is *not* interrupted: where the platform persists it (WorkManager, pending `BGTaskRequest`s) it starts later and completes normally. Enforcement: Android persists an in-flight marker around `execute()` (`InFlightMarkers`; uncleaned marker ⇒ next run terminates with `SkipReason.PreviousAttemptDiedWithProcess`); iOS clears dead one-shots at `start()` by reconciling `active=true` state against the OS pending list (`IOSOneShotReconciliation`, snapshot-first so post-start schedules can't be swept); macOS is trivially compliant (nothing survives the process — see B-027). A periodic's schedule survives; only the interrupted cycle is lost (D-005 coalescing).
+**Why over the obvious alternative:** WorkManager's default re-run of a death-interrupted worker replays a transaction whose context died — half-finished side effects, attempt counters polluted by failures that aren't the worker's fault. iOS's lingering `active=true` ghost permanently blocked Keep-policy re-schedules. "The transaction dies with the process" is the only contract that behaves identically on all three platforms.
+**Ref:** owner decision 2026-06-11. Tests: `InFlightMarkersTest`, `IOSOneShotReconciliationTest`. Docs: `docs/concepts/guarantees.md` § Process death.
 
 ---
 
