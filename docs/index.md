@@ -62,4 +62,4 @@ Backgrounder takes a third path: **a shared API that's honest about what each pl
 - **[Platforms → Force-quit caveat (iOS)](platforms/force-quit.md)** — the single most-often-misunderstood thing about iOS background work. Read this before shipping.
 
 !!! warning "iOS limitation"
-    When the user **force-quits the app** from the App Switcher, **all background tasks stop firing** until the user launches the app again. That's Apple's design; we can't paper over it. See [Force-quit on iOS](platforms/force-quit.md) for what to surface in your UX.
+    When the user **force-quits the app** from the App Switcher, **all background tasks stop firing** until the user launches the app again. This is Apple's design. See [Force-quit on iOS](platforms/force-quit.md) for what to surface in your app's UI.
