@@ -1,12 +1,35 @@
-# Backgrounder
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
+    <img src="docs/assets/logo-light.svg" width="180" alt="Backgrounder logo — a window in focus, with background work receding behind it">
+  </picture>
+</p>
 
-A Kotlin Multiplatform library that wraps platform background-scheduling primitives behind one API:
+<h1 align="center">Backgrounder</h1>
+
+<p align="center">
+  One Kotlin Multiplatform API for background work on Android, iOS, and macOS.
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/iOS-18%2B-blue.svg?style=for-the-badge&logo=apple" alt="iOS 18+">
+  <img src="https://img.shields.io/badge/macOS-15%2B-blue.svg?style=for-the-badge&logo=apple" alt="macOS 15+">
+  <img src="https://img.shields.io/badge/Android-11%2B-3DDC84.svg?style=for-the-badge&logo=android&logoColor=white" alt="Android 11+">
+  <img src="https://img.shields.io/badge/Kotlin-2.3-7F52FF.svg?style=for-the-badge&logo=kotlin&logoColor=white" alt="Kotlin 2.3">
+  <a href="https://github.com/happycodelucky/backgrounder/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/happycodelucky/backgrounder/ci.yml?style=for-the-badge&label=ci" alt="CI"></a>
+  <a href="https://github.com/happycodelucky/backgrounder/actions/workflows/docs.yml"><img src="https://img.shields.io/github/actions/workflow/status/happycodelucky/backgrounder/docs.yml?style=for-the-badge&label=docs" alt="Docs"></a>
+  <a href="https://github.com/happycodelucky/backgrounder/releases/latest"><img src="https://img.shields.io/github/v/release/happycodelucky/backgrounder?style=for-the-badge" alt="Release"></a>
+</p>
+
+---
+
+Backgrounder wraps each platform's background-scheduling primitive behind one API:
 
 - **Android**: Jetpack `WorkManager` (one-shot + periodic, with constraints, retry, expedited).
 - **iOS 18+**: `BGTaskScheduler` (one-shot + library-emulated periodic; force-quit caveat documented).
 - **macOS 15+**: Foundation's `NSBackgroundActivityScheduler` (one-shot + native periodic).
 
-Documentations can be found [here](https://happycodelucky.github.io/backgrounder/)
+Full documentation lives at [happycodelucky.github.io/backgrounder](https://happycodelucky.github.io/backgrounder/).
 
 ---
 
