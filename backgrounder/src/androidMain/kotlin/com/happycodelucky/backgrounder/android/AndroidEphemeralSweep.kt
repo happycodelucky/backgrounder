@@ -50,6 +50,10 @@ internal class AndroidEphemeralSweep(
                 op.result.get(remainingMs, TimeUnit.MILLISECONDS)
                 log.d { "cancelled ephemeral $id" }
             } catch (t: Throwable) {
+                // Preserve the interrupt protocol: swallowing InterruptedException
+                // without re-asserting the flag would hide a system-requested
+                // shutdown signal during Application.onCreate.
+                if (t is InterruptedException) Thread.currentThread().interrupt()
                 log.e(t) { "failed to cancel ephemeral $id within remaining ${remainingMs}ms" }
             }
         }

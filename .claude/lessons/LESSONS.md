@@ -161,6 +161,16 @@ single grep finds them.
 **Fix:** `seal()` takes the same lock. One line.
 **Ref:** `WorkerRegistry.kt::seal`.
 
+### B-025 — Android `ScheduleReplaced` decided via snapshot-then-add — 2026-06-11
+**Cause:** `WorkManagerScheduler.schedule()` read `scheduledIds.snapshot()` to decide the `ScheduleReplaced` emit, then called `add()` later — two racing `schedule()` calls could both miss (or both see) the prior entry and emit inconsistent replace events.
+**Fix:** `ScheduledIdsTracker.addAndWasPresent()` — one guarded read-modify-write. Test: `ScheduledIdsTrackerTest.addAndWasPresentReportsPriorTrackingInOneOperation`.
+**Ref:** `WorkManagerScheduler.kt::schedule`, `ScheduledIdsTracker.kt`.
+
+### B-026 — `docs/concepts/ephemeral.md` promised WorkManager retry after the ready-gate bail — 2026-06-11
+**Cause:** The doc claimed a gated ephemeral dispatch "will pick the work up again on the next dispatch". The code returns a terminal `Result.failure()` — there is no retry; the sweep purges. Docs drifted from the D-020 contract.
+**Fix:** Doc now states the purge/no-retry contract; the misleading `RegistryDispatchWorker` log line ("retry will happen after init completes") fixed in the same pass.
+**Ref:** `docs/concepts/ephemeral.md`, `RegistryDispatchWorker.kt`.
+
 ---
 
 ## Novel design decisions (D)
@@ -264,6 +274,16 @@ reader would not infer from the code. Capture the **decision** and the
 **Why over the obvious alternative:** Suspending `emit` lets a slow collector backpressure-block the producer. The iOS bridge holds the per-task `Mutex` while emitting; a slow `events()` collector would serialise every subsequent dispatch on that id. CLAUDE.md §3 forbids that. `DROP_OLDEST` is honest — collectors see the gap rather than the producer stalling.
 **Ref:** PR #28 (wave 1).
 
+### D-020 — Process-death contract: ephemeral work is purged, never retried — 2026-06-11
+**Decision:** On every platform, work that fires before the library is ready (process restarted, factories not yet registered) terminates with a failure; ephemeral entries are purged by the cold-start sweep. No `retry()` path exists for the not-ready case — ephemeral or not.
+**Why over the obvious alternative:** `Result.retry()` would resurrect work the app may no longer define (factory removed across an upgrade), pollute WorkManager's backoff counters with failures that aren't the worker's fault, and contradict the `ephemeral` flag's whole premise — "do not run from a state I didn't deliberately put it in". The app re-schedules from its own init path.
+**Ref:** owner decision 2026-06-11. `RegistryDispatchWorker.kt`, `docs/concepts/ephemeral.md`. See B-026.
+
+### D-021 — `Throwable` payloads carry bridged `causeMessage` / `causeType` strings — 2026-06-11
+**Decision:** Public event payloads that carry a `Throwable` (`MonitorEvent.LibraryError`, `AttemptFailureReason.FactoryThrew` / `WorkerThrew`) keep the raw `cause` for Kotlin consumers but `@HiddenFromObjC` it, exposing `causeMessage: String?` + `causeType: String?` (computed defaults) for Swift.
+**Why over the obvious alternative:** Dropping `cause` entirely punishes Kotlin consumers (loses stack traces); leaving it visible gives Swift an opaque `KotlinThrowable` (N-009 root cause). Hidden-plus-bridged-strings serves both. Residual wart: `copy()` / `componentN()` still mention the Kotlin type — acceptable, consumers don't construct events.
+**Ref:** `MonitorEvent.kt`; pattern follows B-015 (`@HiddenFromObjC` + Swift-friendly alternative).
+
 ---
 
 ## NEVER DO (N)
@@ -325,7 +345,7 @@ project — beyond CLAUDE.md §13's general hard rules. Section here is for the
 ### N-011 — Never read wall-clock time inside dispatcher / scheduler logic — 2026-05-10
 **Don't:** Call `Clock.System.now()` from code under test that uses `runTest` virtual time.
 **Why:** `runTest` can't intercept the wall-clock read; tests silently lie about timing. Inject a `now: () -> Long` and add deltas to that. See B-020.
-**Ref:** PR #12, commit `fa573fa`.
+**Ref:** PR #12, commit `fa573fa`. 2026-06-11: remaining violations swept — `IOSBackoffEmulation` is now pure math over a `nowMs` param, `BGTaskBackedScheduler` takes an injected `clock`, `IOSStateStore.recordRun` requires `nowMs`. The one documented exemption: `epochMsToNSDate` (FFI boundary to an absolute-time OS API). Test: `IOSSchedulerVirtualClockTest`.
 
 ### N-012 — Never add a `WorkerContext.network` (or similar) proxy for `Reachability.shared` — 2026-05-12
 **Don't:** Wrap upstream singletons in thin library-side proxies.

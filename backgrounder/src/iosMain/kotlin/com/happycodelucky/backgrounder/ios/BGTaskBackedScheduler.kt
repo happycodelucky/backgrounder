@@ -54,6 +54,10 @@ internal class BGTaskBackedScheduler(
     // Injectable so tests can simulate BGTaskScheduler.submit failures —
     // the real scheduler needs a live app host. Production uses the default.
     private val submitRequest: (BGTaskRequest) -> BGSubmitResult = ::submitBGTaskRequest,
+    // Injectable so tests can drive virtual time (N-011 / B-020). All schedule
+    // and retry timestamp math goes through this; production reads wall-clock.
+    // Event `at` timestamps and the NSDate FFI conversion stay wall-clock.
+    private val clock: () -> Long = { Clock.System.now().toEpochMilliseconds() },
 ) : Scheduler {
     private val log = Logger.withTag("Backgrounder/iOS/Scheduler")
 
@@ -79,7 +83,7 @@ internal class BGTaskBackedScheduler(
         guard: CompletionGuard,
     ) {
         mutexes.withMutex(taskId) {
-            state.recordRun(taskId, result)
+            state.recordRun(taskId, result, nowMs = clock())
             val active = state.readActive(taskId)
 
             when (state.readKind(taskId)) {
@@ -152,7 +156,7 @@ internal class BGTaskBackedScheduler(
                 // delayFor(attempt) — the attempt that *just failed* — matches Android's
                 // WorkManager backoff curve: first retry waits `initialDelay`, second waits
                 // `2 * initialDelay` (exponential) or `2 * initialDelay` (linear), etc.
-                val nextRun = IOSBackoffEmulation.nextRunEpochMs(backoff, attempt)
+                val nextRun = IOSBackoffEmulation.nextRunEpochMs(backoff, attempt, clock())
                 state.setNextRunEpochMs(taskId, nextRun)
                 emitter.emit(
                     MonitorEvent.RetryScheduled(
@@ -253,7 +257,7 @@ internal class BGTaskBackedScheduler(
     }
 
     private fun scheduleOneTime(request: WorkRequest.OneTime): ScheduleOutcome {
-        val nextRun = IOSBackoffEmulation.epochMillisAt(request.initialDelay)
+        val nextRun = IOSBackoffEmulation.epochMillisAt(request.initialDelay, clock())
         state.writeOnSchedule(
             taskId = request.taskId,
             kind = IOSStateStore.Kind.OneShot,
@@ -272,7 +276,7 @@ internal class BGTaskBackedScheduler(
     }
 
     private fun schedulePeriodic(request: WorkRequest.Periodic): ScheduleOutcome {
-        val nextRun = Clock.System.now().toEpochMilliseconds() + request.interval.inWholeMilliseconds
+        val nextRun = clock() + request.interval.inWholeMilliseconds
         state.writeOnSchedule(
             taskId = request.taskId,
             kind = IOSStateStore.Kind.Periodic,
@@ -469,7 +473,12 @@ internal class BGTaskBackedScheduler(
     }
 }
 
-/** Convert epoch millis to an NSDate. */
+/**
+ * Convert epoch millis to an NSDate. Deliberately wall-clock (N-011 exemption):
+ * this is the FFI boundary to an absolute-time OS API — `earliestBeginDate` is
+ * only meaningful against the device's real clock. All *decision* math happens
+ * upstream against the injected clock; this is presentation only.
+ */
 internal fun epochMsToNSDate(epochMs: Long): NSDate {
     val seconds = (epochMs - Clock.System.now().toEpochMilliseconds()) / 1000.0
     return NSDate.dateWithTimeIntervalSinceNow(seconds)

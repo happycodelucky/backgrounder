@@ -60,9 +60,13 @@ internal class WorkManagerScheduler(
         policy: ConflictPolicy,
     ): ScheduleOutcome {
         // ScheduleReplaced fires *before* Scheduled when Replace policy
-        // displaces an existing tracked id. WorkManager's REPLACE / UPDATE
-        // semantics then take over for the OS-side replacement.
-        if (policy == ConflictPolicy.Replace && request.taskId in scheduledIds.snapshot()) {
+        // displaces an existing tracked id. The was-tracked decision and the
+        // add are ONE guarded operation — a snapshot-then-add pair would let
+        // two racing schedule() calls emit inconsistent ScheduleReplaced
+        // events. WorkManager's REPLACE / UPDATE semantics then take over
+        // for the OS-side replacement.
+        val wasTracked = scheduledIds.addAndWasPresent(request.taskId)
+        if (policy == ConflictPolicy.Replace && wasTracked) {
             emitter.emit(
                 MonitorEvent.ScheduleReplaced(
                     taskId = request.taskId,
@@ -81,7 +85,6 @@ internal class WorkManagerScheduler(
                 request = request,
             ),
         )
-        scheduledIds.add(request.taskId)
 
         return when (request) {
             is WorkRequest.OneTime -> scheduleOneTime(request, policy)
@@ -227,6 +230,13 @@ private fun ConflictPolicy.toAndroidOneTimePolicy(): ExistingWorkPolicy =
         ConflictPolicy.Keep -> ExistingWorkPolicy.KEEP
     }
 
+// Replace → UPDATE is deliberate, and semantically different from one-shot
+// REPLACE: UPDATE patches the existing periodic request in place (interval,
+// constraints, input) while PRESERVING WorkManager's run history and next-run
+// anchor — the cadence does not reset. REPLACE would cancel-and-re-enqueue and
+// restart the cycle from "now". Documented in docs/recipes/one-shot.md; the
+// ScheduleReplaced event still fires, meaning "request contents replaced",
+// not "schedule reset".
 private fun ConflictPolicy.toAndroidPeriodicPolicy(): ExistingPeriodicWorkPolicy =
     when (this) {
         ConflictPolicy.Replace -> ExistingPeriodicWorkPolicy.UPDATE

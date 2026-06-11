@@ -6,7 +6,6 @@ import com.happycodelucky.backgrounder.TaskId
 import com.happycodelucky.backgrounder.WorkInput
 import com.happycodelucky.backgrounder.WorkResult
 import com.russhwolf.settings.Settings
-import kotlin.time.Clock
 
 /**
  * Per-task persisted state — see plan §iOS state store.
@@ -121,13 +120,17 @@ internal class IOSStateStore(
         settings.putLong(keys(taskId).nextRunEpochMs, epochMs)
     }
 
+    // `nowMs` is required (no wall-clock default): `lastRunEpochMs` feeds the
+    // resurrection math in BGTaskHandlerRegistration (`lastRunMs + intervalMs`),
+    // so it must share a time base with the caller's injected clock (N-011).
     fun recordRun(
         taskId: TaskId,
         result: WorkResult,
+        nowMs: Long,
     ) {
         val k = keys(taskId)
         settings.putString(k.lastResult, result.toToken())
-        settings.putLong(k.lastRunEpochMs, Clock.System.now().toEpochMilliseconds())
+        settings.putLong(k.lastRunEpochMs, nowMs)
     }
 
     fun clear(taskId: TaskId) {

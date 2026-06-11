@@ -63,10 +63,17 @@ internal class RegistryDispatchWorker(
         try {
             val ephemeral = AndroidWorkInputMapper.readEphemeral(inputData)
             val ready = readyGate.value
+            // Process-death contract (all platforms): ephemeral work is PURGED,
+            // never retried. A worker firing before the library is ready returns
+            // a terminal failure here; the ephemeral sweep at the next create()
+            // cancels the unique work and clears the registry entry. Non-ephemeral
+            // work falls through — if its factory isn't registered yet it fails
+            // NotRegistered below, also terminal by design: returning retry()
+            // would resurrect work the app may no longer define.
             if (ephemeral && !ready) {
                 tagged.w {
-                    "fired before Backgrounder.markReady(); ephemeral request bailed " +
-                        "(retry will happen after init completes)"
+                    "fired before Backgrounder.markReady(); ephemeral request purged " +
+                        "(terminal failure — ephemeral work never retries across process death)"
                 }
                 val now = Clock.System.now()
                 emitter.emit(
