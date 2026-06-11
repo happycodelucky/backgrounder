@@ -32,6 +32,15 @@ internal class ScheduledIdsTracker {
     }
 
     /**
+     * Record that [taskId] was just scheduled, returning whether it was
+     * *already* tracked. One guarded read-modify-write so the caller's
+     * "emit `ScheduleReplaced`?" decision can't race a concurrent
+     * `schedule()` — a snapshot-then-add pair lets two racing callers both
+     * miss (or both see) the prior entry.
+     */
+    fun addAndWasPresent(taskId: TaskId): Boolean = synchronized(lock) { !ids.add(taskId) }
+
+    /**
      * Remove [taskId] if it was tracked. Returns `true` if it was previously
      * tracked (callers map this to `Cancelled(1)`), `false` otherwise (callers
      * map to `NoSuchTask`).

@@ -8,10 +8,10 @@ import com.happycodelucky.backgrounder.PendingPredicate
 import com.happycodelucky.backgrounder.ScheduledTask
 import com.happycodelucky.backgrounder.TaskId
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.coroutines.suspendCancellableCoroutine
 import platform.BackgroundTasks.BGTaskRequest
 import platform.BackgroundTasks.BGTaskScheduler
 import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
 import kotlin.time.Clock
 import kotlin.time.Instant
 
@@ -79,20 +79,32 @@ internal class IOSScheduledTaskQuery(
         }
         if (nextRunHint != null && nextRunHint > Clock.System.now()) {
             when (state0) {
-                ScheduledTask.State.Backoff ->
+                ScheduledTask.State.Backoff -> {
                     result.add(PendingPredicate.WaitingForBackoff(until = nextRunHint))
-                ScheduledTask.State.Pending ->
+                }
+
+                ScheduledTask.State.Pending -> {
                     result.add(PendingPredicate.WaitingForEarliestBeginDate(at = nextRunHint))
+                }
+
                 ScheduledTask.State.Running,
                 ScheduledTask.State.Blocked,
-                -> Unit
+                -> {
+                    Unit
+                }
             }
         }
         return result
     }
 
+    // `suspendCoroutine`, not `suspendCancellableCoroutine`: the OS call cannot
+    // be cancelled in flight, and the callback always arrives promptly — a
+    // brief non-cancellable wait states the truth, instead of relying on
+    // "resume after cancellation is a silent no-op" (an implementation detail
+    // of kotlinx.coroutines, not a contract). Caller cancellation is processed
+    // at the next suspension point after resume.
     private suspend fun pendingByIdentifier(): Map<String, BGTaskRequest> =
-        suspendCancellableCoroutine { cont ->
+        suspendCoroutine { cont ->
             BGTaskScheduler.sharedScheduler.getPendingTaskRequestsWithCompletionHandler { list ->
                 // Defensive: K/N stubs the callback as `List<*>?` and the element
                 // type isn't checked until access. filterIsInstance drops any

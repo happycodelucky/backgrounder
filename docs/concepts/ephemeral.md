@@ -28,7 +28,7 @@ Even with the sweep, there's a tiny window on Android where `JobScheduler` could
 
 - `Backgrounder.create(...)` initialises the gate to `false`.
 - `backgrounder.start()` flips it to `true` — call this once any further app-side init the workers depend on is complete.
-- Inside `RegistryDispatchWorker.doWork()`, ephemeral requests check the gate; if `false`, the worker returns `WorkResult.Failure("dispatched before ephemeralReady")` immediately without invoking user code. WorkManager's normal retry behaviour will pick the work up again on the next dispatch — by which time `start()` will have run.
+- Inside `RegistryDispatchWorker.doWork()`, ephemeral requests check the gate; if `false`, the worker returns a **terminal failure** immediately without invoking user code — it does **not** retry. The process-death contract is the same on every platform: ephemeral work is *purged*, never replayed. The sweep at the next `Backgrounder.create(...)` cancels the unique work and clears the registry entry; your app re-schedules ephemeral work from its own initialisation path once `start()` has run.
 
 ## When to use it
 

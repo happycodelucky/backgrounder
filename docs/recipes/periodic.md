@@ -23,6 +23,8 @@ backgrounder.schedule(
 | `Failure(reason)`     | **Reschedule at `now + interval`** — a single failed run does not kill the schedule. Matches WorkManager. |
 | `Retry`               | Reschedule at `now + backoff.delayFor(attempt)` (one-time deviation from cadence). The next regular run still follows. |
 
+**Missed cycles fire once.** If the app was suspended or dead while N cycles came due, the task runs **once** on the next wake — never N times back-to-back. Android WorkManager, iOS App Refresh, and the in-process foreground feed all converge on "fire once when due", so the contract holds on every platform. Workers that need catch-up semantics should compute the gap from their own persisted state (e.g. a `lastProcessedAt` timestamp).
+
 ## iOS specifics
 
 iOS has no native repeating-task primitive — periodic dispatch is **library-driven** through a two-feed dispatcher:

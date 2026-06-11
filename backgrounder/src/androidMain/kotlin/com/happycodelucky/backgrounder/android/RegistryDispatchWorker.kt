@@ -61,12 +61,26 @@ internal class RegistryDispatchWorker(
         val originalThreadName = Thread.currentThread().name
         renameThread("Backgrounder/$taskId")
         try {
+            // Process-death contract (D-020/D-022): non-ephemeral work leans on
+            // WorkManager's durability — a worker whose process died mid-run is
+            // re-dispatched by the OS and may complete. That resilience is
+            // Android's strength and is deliberately NOT suppressed here (the
+            // iOS/macOS schedulers have no such resilience and never replay a
+            // death-interrupted run). Ephemeral work is the exception: purged
+            // at the next create(), never replayed.
             val ephemeral = AndroidWorkInputMapper.readEphemeral(inputData)
             val ready = readyGate.value
+            // Process-death contract (all platforms): ephemeral work is PURGED,
+            // never retried. A worker firing before the library is ready returns
+            // a terminal failure here; the ephemeral sweep at the next create()
+            // cancels the unique work and clears the registry entry. Non-ephemeral
+            // work falls through — if its factory isn't registered yet it fails
+            // NotRegistered below, also terminal by design: returning retry()
+            // would resurrect work the app may no longer define.
             if (ephemeral && !ready) {
                 tagged.w {
-                    "fired before Backgrounder.markReady(); ephemeral request bailed " +
-                        "(retry will happen after init completes)"
+                    "fired before Backgrounder.markReady(); ephemeral request purged " +
+                        "(terminal failure — ephemeral work never retries across process death)"
                 }
                 val now = Clock.System.now()
                 emitter.emit(

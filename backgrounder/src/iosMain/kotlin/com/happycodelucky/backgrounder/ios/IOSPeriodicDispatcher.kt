@@ -304,7 +304,7 @@ internal class IOSPeriodicDispatcher(
         intervalMs: Long,
         now: Long,
     ) {
-        state.recordRun(taskId, result)
+        state.recordRun(taskId, result, nowMs = clock())
         when (result) {
             WorkResult.Success, is WorkResult.Failure -> {
                 // Success/Failure: regular cycle continues. The advance in
@@ -332,12 +332,11 @@ internal class IOSPeriodicDispatcher(
                 // existing one-shot retry path in BGTaskBackedScheduler.
                 //
                 // We compute the absolute timestamp from our injected `clock`
-                // (via the `now` already captured at runOne entry), not via
-                // IOSBackoffEmulation.nextRunEpochMs — that helper reads
-                // wall-clock `Clock.System.now()` directly, which would
-                // bypass the test-injected virtual clock and produce wrong
-                // timestamps under runTest. We only use the helper for its
-                // pure delay calculation (policy.delayFor) here.
+                // (via the `now` already captured at runOne entry).
+                // IOSBackoffEmulation.nextRunEpochMs is now pure (takes nowMs;
+                // no wall-clock read — N-011), so it would also be correct
+                // here; we keep the local computation since `now` is already
+                // in hand.
                 val backoffDelayMs = backoff.delayFor(attempt).inWholeMilliseconds
                 val backoffNextRun = now + backoffDelayMs
                 // Don't override the regular cycle if the backoff would push

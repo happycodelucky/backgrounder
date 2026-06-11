@@ -1,6 +1,8 @@
 package com.happycodelucky.backgrounder
 
 import kotlin.experimental.ExperimentalObjCName
+import kotlin.experimental.ExperimentalObjCRefinement
+import kotlin.native.HiddenFromObjC
 import kotlin.native.ObjCName
 import kotlin.time.Duration
 import kotlin.time.Instant
@@ -167,7 +169,22 @@ public sealed interface MonitorEvent {
         public override val taskId: TaskId,
         public override val at: Instant,
         public val message: String,
+        /**
+         * Raw cause for Kotlin consumers. Hidden from ObjC — `Throwable`
+         * bridges to Swift as an opaque `KotlinThrowable` with no structure
+         * (CLAUDE.md §8, N-009 root cause). Swift reads [causeMessage] /
+         * [causeType] instead.
+         *
+         * `@OptIn(ExperimentalObjCRefinement::class)`: standard SKIE-recognised
+         * annotation; stable in practice.
+         */
+        @OptIn(ExperimentalObjCRefinement::class)
+        @HiddenFromObjC
         public val cause: Throwable?,
+        /** [cause]'s message, bridged for Swift. */
+        public val causeMessage: String? = cause?.message,
+        /** [cause]'s concrete class simple name (e.g. `"SerializationException"`), bridged for Swift. */
+        public val causeType: String? = cause?.let { it::class.simpleName },
     ) : MonitorEvent
 }
 
@@ -208,7 +225,9 @@ public sealed interface DeferralReason {
      * The task is in a backoff window — the library asked the OS to delay
      * until [until], but the OS fired early.
      */
-    public data class BackoffWindow(public val until: Instant?) : DeferralReason
+    public data class BackoffWindow(
+        public val until: Instant?,
+    ) : DeferralReason
 }
 
 /** Why a [MonitorEvent.Skipped] was emitted — structurally unrecoverable. */
@@ -241,8 +260,40 @@ public sealed interface AttemptFailureReason {
     public data object ExpiredByOS : AttemptFailureReason
 
     /** The factory threw while creating the worker. */
-    public data class FactoryThrew(public val cause: Throwable) : AttemptFailureReason
+    public data class FactoryThrew(
+        /**
+         * Raw cause for Kotlin consumers. Hidden from ObjC — `Throwable`
+         * bridges to Swift as an opaque `KotlinThrowable` (CLAUDE.md §8).
+         * Swift reads [causeMessage] / [causeType] instead.
+         *
+         * `@OptIn(ExperimentalObjCRefinement::class)`: standard SKIE-recognised
+         * annotation; stable in practice.
+         */
+        @OptIn(ExperimentalObjCRefinement::class)
+        @HiddenFromObjC
+        public val cause: Throwable,
+        /** [cause]'s message, bridged for Swift. */
+        public val causeMessage: String? = cause.message,
+        /** [cause]'s concrete class simple name, bridged for Swift. */
+        public val causeType: String? = cause::class.simpleName,
+    ) : AttemptFailureReason
 
     /** [BackgroundWorker.execute] threw an uncaught exception. */
-    public data class WorkerThrew(public val cause: Throwable) : AttemptFailureReason
+    public data class WorkerThrew(
+        /**
+         * Raw cause for Kotlin consumers. Hidden from ObjC — `Throwable`
+         * bridges to Swift as an opaque `KotlinThrowable` (CLAUDE.md §8).
+         * Swift reads [causeMessage] / [causeType] instead.
+         *
+         * `@OptIn(ExperimentalObjCRefinement::class)`: standard SKIE-recognised
+         * annotation; stable in practice.
+         */
+        @OptIn(ExperimentalObjCRefinement::class)
+        @HiddenFromObjC
+        public val cause: Throwable,
+        /** [cause]'s message, bridged for Swift. */
+        public val causeMessage: String? = cause.message,
+        /** [cause]'s concrete class simple name, bridged for Swift. */
+        public val causeType: String? = cause::class.simpleName,
+    ) : AttemptFailureReason
 }

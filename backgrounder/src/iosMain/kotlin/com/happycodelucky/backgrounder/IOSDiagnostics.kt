@@ -53,6 +53,7 @@ internal actual fun platformDiagnostics(
  */
 private fun readPermittedIdentifiers(): Set<String> {
     val raw = NSBundle.mainBundle.objectForInfoDictionaryKey(KEY) ?: return emptySet()
+
     @Suppress("UNCHECKED_CAST")
     val list = raw as? List<*> ?: return emptySet()
     return list.filterIsInstance<String>().toSet()

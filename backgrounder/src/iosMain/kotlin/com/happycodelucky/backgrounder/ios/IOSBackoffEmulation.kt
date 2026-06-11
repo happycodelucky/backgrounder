@@ -1,7 +1,6 @@
 package com.happycodelucky.backgrounder.ios
 
 import com.happycodelucky.backgrounder.BackoffPolicy
-import kotlin.time.Clock
 import kotlin.time.Duration
 
 /**
@@ -11,15 +10,20 @@ import kotlin.time.Duration
  *  - resubmitting a fresh `BGTaskRequest` with that date.
  *
  * This module is the pure math; the resubmit lives in [BGTaskBackedScheduler].
+ *
+ * Pure math means **no wall-clock reads** (N-011 / B-020): callers pass their
+ * injected `clock()` value as [nowMs], so `runTest` virtual time reaches every
+ * timestamp this object produces.
  */
 internal object IOSBackoffEmulation {
     /** Returns the next `earliestBeginDate` (epoch millis) for this attempt. */
     fun nextRunEpochMs(
         policy: BackoffPolicy,
         attempt: Int,
+        nowMs: Long,
     ): Long {
         val delay = policy.delayFor(attempt)
-        return Clock.System.now().toEpochMilliseconds() + delay.inWholeMilliseconds
+        return nowMs + delay.inWholeMilliseconds
     }
 
     /** True if [attempt] meets or exceeds the policy's cap. */
@@ -29,5 +33,8 @@ internal object IOSBackoffEmulation {
     ): Boolean = attempt >= policy.maxAttempts
 
     /** Shorthand: epoch millis for "now + d". */
-    fun epochMillisAt(d: Duration): Long = Clock.System.now().toEpochMilliseconds() + d.inWholeMilliseconds
+    fun epochMillisAt(
+        d: Duration,
+        nowMs: Long,
+    ): Long = nowMs + d.inWholeMilliseconds
 }

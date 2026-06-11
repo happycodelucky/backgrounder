@@ -24,6 +24,8 @@ backgrounder.events()
 
 Swift sees this as `AsyncSequence<MonitorEvent>`. Use `onEnum(of:)` for exhaustive switching.
 
+The raw `Throwable` payloads (`LibraryError.cause`, `AttemptFailureReason.FactoryThrew.cause` / `WorkerThrew.cause`) are Kotlin-only — `Throwable` bridges to Swift as an opaque `KotlinThrowable`, so those fields are hidden from the generated header. Swift reads the bridged `causeMessage` / `causeType` strings instead.
+
 ## With the `:background-monitor` module
 
 If you want a callback-style attach API (and you don't want to manage the `collect` coroutine yourself), add the optional sibling artifact:

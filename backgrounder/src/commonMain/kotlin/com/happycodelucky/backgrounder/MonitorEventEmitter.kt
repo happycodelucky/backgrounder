@@ -66,9 +66,13 @@ internal class MonitorEventEmitter(
     private fun dispatchToLegacy(event: MonitorEvent) {
         when (event) {
             is MonitorEvent.Scheduled -> legacyListener.onScheduled(event.taskId, event.request)
+
             is MonitorEvent.WorkStarted -> legacyListener.onStarted(event.taskId, event.attempt)
+
             is MonitorEvent.WorkCompleted -> legacyListener.onCompleted(event.taskId, event.attempt, event.result)
+
             is MonitorEvent.Cancelled -> legacyListener.onCancelled(event.taskId)
+
             is MonitorEvent.ScheduleReplaced,
             is MonitorEvent.AttemptDeferred,
             is MonitorEvent.Skipped,

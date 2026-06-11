@@ -4,9 +4,9 @@
 
 | Field                       | Android `WorkManager` | iOS 18 `BGTaskScheduler` | macOS 15 `NSBackgroundActivityScheduler` |
 | --------------------------- | --------------------- | ------------------------ | ---------------------------------------- |
-| `survivesProcessDeath`      | true                  | true                     | true                                     |
-| `survivesReboot`            | true                  | true                     | true                                     |
-| `survivesForceQuit`         | **true**              | **false**                | true                                     |
+| `survivesProcessDeath`      | true                  | true                     | **false** (in-process)                   |
+| `survivesReboot`            | true                  | true                     | **false**                                |
+| `survivesForceQuit`         | **true**              | **false**                | **false**                                |
 | `honoursWallClock`          | approximate           | **false** (hint only)    | approximate                              |
 | `supportsRetryBackoff`      | true (native)         | true (library-emulated)  | true (library-emulated)                  |
 | `cancelsInFlight`           | **true**              | **false**                | true                                     |
@@ -16,8 +16,16 @@
 Read carefully:
 
 - **`survivesForceQuit = false` on iOS.** The single most important caveat. See [Force-quit caveat (iOS)](../platforms/force-quit.md).
+- **All survival flags are `false` on macOS.** `NSBackgroundActivityScheduler` registrations live in your process — when the process exits (quit, force-quit, reboot), every schedule goes with it, and nothing relaunches the app. Re-schedule from your app's init path at next launch.
 - **`honoursWallClock = false` on iOS** means `earliestBeginDate` is a *hint* — the system can defer indefinitely based on opaque heuristics (battery state, usage patterns, Low Power Mode).
 - **`cancelsInFlight = false` on iOS** means `Backgrounder.cancel(taskId)` only kills *pending* requests for scheduled work; a worker already executing on iOS finishes whatever it was doing.
+
+## Process death
+
+1. **In-flight work gets to try to complete** — the library never preemptively kills a running worker.
+2. **The platform's own resilience is honoured — and never imitated.** On Android, WorkManager may re-dispatch a worker whose process died mid-run; if Android can complete the work, it should — the library does not suppress that. iOS and macOS offer no such resilience, and the library adds none: a run that died with its process is never replayed. On iOS, a one-shot whose `BGTask` died mid-run is additionally cleared from the state store at the next `start()` so its ghost can't block future `ConflictPolicy.Keep` schedules.
+3. **Scheduled-but-never-started work is not "interrupted".** Where the platform persists it (Android WorkManager; iOS pending `BGTaskRequest`s), it may start later in a new process and complete normally. A periodic's *schedule* survives where the platform persists it; only the interrupted cycle is lost (see [missed cycles](../recipes/periodic.md)).
+4. **Ephemeral work is purged** at the next launch before anything can dispatch, on every platform — see [the `ephemeral` flag](ephemeral.md).
 
 ## Branching UX on guarantees
 

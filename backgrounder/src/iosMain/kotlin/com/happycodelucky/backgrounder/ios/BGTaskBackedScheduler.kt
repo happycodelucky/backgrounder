@@ -51,6 +51,13 @@ internal class BGTaskBackedScheduler(
     // OneShot scheduling is unchanged — still per-`TaskId` BGTaskRequests.
     private val backgroundFeed: IOSBackgroundFeed,
     private val foregroundFeed: IOSForegroundFeed,
+    // Injectable so tests can simulate BGTaskScheduler.submit failures —
+    // the real scheduler needs a live app host. Production uses the default.
+    private val submitRequest: (BGTaskRequest) -> BGSubmitResult = ::submitBGTaskRequest,
+    // Injectable so tests can drive virtual time (N-011 / B-020). All schedule
+    // and retry timestamp math goes through this; production reads wall-clock.
+    // Event `at` timestamps and the NSDate FFI conversion stay wall-clock.
+    private val clock: () -> Long = { Clock.System.now().toEpochMilliseconds() },
 ) : Scheduler {
     private val log = Logger.withTag("Backgrounder/iOS/Scheduler")
 
@@ -76,7 +83,7 @@ internal class BGTaskBackedScheduler(
         guard: CompletionGuard,
     ) {
         mutexes.withMutex(taskId) {
-            state.recordRun(taskId, result)
+            state.recordRun(taskId, result, nowMs = clock())
             val active = state.readActive(taskId)
 
             when (state.readKind(taskId)) {
@@ -149,12 +156,14 @@ internal class BGTaskBackedScheduler(
                 // delayFor(attempt) — the attempt that *just failed* — matches Android's
                 // WorkManager backoff curve: first retry waits `initialDelay`, second waits
                 // `2 * initialDelay` (exponential) or `2 * initialDelay` (linear), etc.
-                val nextRun = IOSBackoffEmulation.nextRunEpochMs(backoff, attempt)
+                val nextRun = IOSBackoffEmulation.nextRunEpochMs(backoff, attempt, clock())
                 state.setNextRunEpochMs(taskId, nextRun)
                 emitter.emit(
                     MonitorEvent.RetryScheduled(
                         taskId = taskId,
-                        at = kotlin.time.Clock.System.now(),
+                        at =
+                            kotlin.time.Clock.System
+                                .now(),
                         nextAttempt = nextAttempt,
                         delay = backoff.delayFor(attempt),
                         nextRunHint = kotlin.time.Instant.fromEpochMilliseconds(nextRun),
@@ -183,7 +192,7 @@ internal class BGTaskBackedScheduler(
             BGProcessingTaskRequest(taskId.value).apply {
                 earliestBeginDate = epochMsToNSDate(earliestEpochMs)
             }
-        when (val outcome = submitBGTaskRequest(request)) {
+        when (val outcome = submitRequest(request)) {
             BGSubmitResult.Success -> Unit
             is BGSubmitResult.Failure -> log.e { "[$taskId] resubmit failed: ${outcome.message}" }
         }
@@ -221,7 +230,9 @@ internal class BGTaskBackedScheduler(
             emitter.emit(
                 MonitorEvent.ScheduleReplaced(
                     taskId = request.taskId,
-                    at = kotlin.time.Clock.System.now(),
+                    at =
+                        kotlin.time.Clock.System
+                            .now(),
                     policy = policy,
                     current = request,
                 ),
@@ -232,7 +243,9 @@ internal class BGTaskBackedScheduler(
         emitter.emit(
             MonitorEvent.Scheduled(
                 taskId = request.taskId,
-                at = kotlin.time.Clock.System.now(),
+                at =
+                    kotlin.time.Clock.System
+                        .now(),
                 request = request,
             ),
         )
@@ -244,7 +257,7 @@ internal class BGTaskBackedScheduler(
     }
 
     private fun scheduleOneTime(request: WorkRequest.OneTime): ScheduleOutcome {
-        val nextRun = IOSBackoffEmulation.epochMillisAt(request.initialDelay)
+        val nextRun = IOSBackoffEmulation.epochMillisAt(request.initialDelay, clock())
         state.writeOnSchedule(
             taskId = request.taskId,
             kind = IOSStateStore.Kind.OneShot,
@@ -263,7 +276,7 @@ internal class BGTaskBackedScheduler(
     }
 
     private fun schedulePeriodic(request: WorkRequest.Periodic): ScheduleOutcome {
-        val nextRun = Clock.System.now().toEpochMilliseconds() + request.interval.inWholeMilliseconds
+        val nextRun = clock() + request.interval.inWholeMilliseconds
         state.writeOnSchedule(
             taskId = request.taskId,
             kind = IOSStateStore.Kind.Periodic,
@@ -303,7 +316,7 @@ internal class BGTaskBackedScheduler(
         request: BGTaskRequest,
         taskId: TaskId,
     ): ScheduleOutcome =
-        when (val outcome = submitBGTaskRequest(request)) {
+        when (val outcome = submitRequest(request)) {
             BGSubmitResult.Success -> {
                 ScheduleOutcome.Scheduled
             }
@@ -313,13 +326,18 @@ internal class BGTaskBackedScheduler(
                 emitter.emit(
                     MonitorEvent.LibraryError(
                         taskId = taskId,
-                        at = kotlin.time.Clock.System.now(),
+                        at =
+                            kotlin.time.Clock.System
+                                .now(),
                         message = "BGTaskScheduler.submit failed: ${outcome.message}",
                         cause = null,
                     ),
                 )
-                // Wipe state so we don't leave a phantom active record.
+                // Wipe state AND the ephemeral marker so we don't leave a
+                // phantom record — schedule() added the ephemeral entry before
+                // submission, and a failed submit must roll both back (B-023).
                 state.clear(taskId)
+                ephemeral.remove(taskId)
                 ScheduleOutcome.Rejected("BGTaskScheduler.submit failed: ${outcome.message}")
             }
         }
@@ -346,7 +364,9 @@ internal class BGTaskBackedScheduler(
         emitter.emit(
             MonitorEvent.Cancelled(
                 taskId = taskId,
-                at = kotlin.time.Clock.System.now(),
+                at =
+                    kotlin.time.Clock.System
+                        .now(),
                 source = CancelSource.User,
             ),
         )
@@ -379,7 +399,9 @@ internal class BGTaskBackedScheduler(
         // Step 6 cut-over: for periodics, there's no per-id BGTaskRequest to cancel
         // in iOS's queue (only the tick exists, and we cancel it once after the
         // loop). For one-shots, the per-id cancel still applies.
-        val cancelledAt = kotlin.time.Clock.System.now()
+        val cancelledAt =
+            kotlin.time.Clock.System
+                .now()
         ids.forEach { id ->
             if (state.readKind(id) == IOSStateStore.Kind.OneShot) {
                 BGTaskScheduler.sharedScheduler.cancelTaskRequestWithIdentifier(id.value)
@@ -451,7 +473,12 @@ internal class BGTaskBackedScheduler(
     }
 }
 
-/** Convert epoch millis to an NSDate. */
+/**
+ * Convert epoch millis to an NSDate. Deliberately wall-clock (N-011 exemption):
+ * this is the FFI boundary to an absolute-time OS API — `earliestBeginDate` is
+ * only meaningful against the device's real clock. All *decision* math happens
+ * upstream against the injected clock; this is presentation only.
+ */
 internal fun epochMsToNSDate(epochMs: Long): NSDate {
     val seconds = (epochMs - Clock.System.now().toEpochMilliseconds()) / 1000.0
     return NSDate.dateWithTimeIntervalSinceNow(seconds)

@@ -56,4 +56,16 @@ class ScheduledIdsTrackerTest {
         assertEquals(setOf(a), snap, "snapshot must not see later additions")
         assertEquals(setOf(a, b), tracker.snapshot())
     }
+
+    @Test
+    fun addAndWasPresentReportsPriorTrackingInOneOperation() {
+        // Anchor for the ScheduleReplaced race fix: the was-tracked decision
+        // and the add must be a single guarded operation, not snapshot-then-add.
+        val tracker = ScheduledIdsTracker()
+        assertFalse(tracker.addAndWasPresent(a), "first add: not previously tracked")
+        assertTrue(tracker.addAndWasPresent(a), "second add: was tracked")
+        assertEquals(setOf(a), tracker.snapshot())
+        tracker.removeIfPresent(a)
+        assertFalse(tracker.addAndWasPresent(a), "re-add after remove: not tracked again")
+    }
 }

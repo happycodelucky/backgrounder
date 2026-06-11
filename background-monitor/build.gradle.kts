@@ -97,6 +97,7 @@ kotlin {
             // a second `implementation(...)` line.
             api(project(":backgrounder"))
             implementation(libs.kotlinx.coroutines.core)
+            implementation(libs.kotlinx.atomicfu)
             implementation(libs.kermit)
         }
 

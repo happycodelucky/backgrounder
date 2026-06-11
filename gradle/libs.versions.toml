@@ -47,8 +47,6 @@ kotlinx-atomicfu = "0.32.1"
 
 # --- AndroidX ---------------------------------------------------------------
 androidx-work = "2.11.2"
-androidx-lifecycle = "2.10.0"
-androidx-datastore = "1.2.1"
 androidx-startup = "1.2.0"
 
 # --- Other libraries --------------------------------------------------------

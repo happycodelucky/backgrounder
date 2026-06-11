@@ -115,6 +115,7 @@ internal object IOSBackgrounderBuilder {
             )
 
         val sweep = IOSEphemeralSweep(ephemeral, state)
+        val reconciliation = IOSOneShotReconciliation(state, mutexes)
         // Step 4: BGTaskHandlerRegistration now also takes the background feed, which
         // it uses to register the tick identifier with BGTaskScheduler (alongside
         // per-id handlers — coexistence is intentional until step 6's cut-over).
@@ -154,6 +155,11 @@ internal object IOSBackgrounderBuilder {
                     // before start() returns is rare but not impossible.
                     sweep.run()
                     registration.run()
+                    // After registration: clear one-shots whose run died with a
+                    // previous process (D-020/D-022). Snapshot-first inside, so
+                    // schedules issued after start() can't be swept by the
+                    // async OS callback.
+                    reconciliation.launch()
                     foregroundFeed.start()
                 },
                 onShutdown = {

@@ -43,3 +43,6 @@ backgrounder.schedule(request, policy = ConflictPolicy.Keep)    // ignore new, k
 ```
 
 `Append` (Android chained-work semantics) is v2.
+
+!!! note "Periodic `Replace` on Android is an in-place update"
+    For **periodic** work on Android, `Replace` maps to WorkManager's `ExistingPeriodicWorkPolicy.UPDATE`: the existing request's interval, constraints, and input are patched in place, preserving run history and the next-run anchor. It is *not* a cancel-and-re-enqueue — the cadence does not reset. One-shot `Replace` keeps the cancel-and-re-enqueue semantics (`ExistingWorkPolicy.REPLACE`).

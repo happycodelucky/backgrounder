@@ -94,7 +94,7 @@ single grep finds them.
 ### B-011 — iOS `Keep` policy ran side effects before early-return — 2026-04
 **Cause:** `schedule()` added to `ephemeral` and fired `onScheduled` *before* the `Keep && active` early-return — metrics drifted, ephemeral state corrupted on no-op reschedule.
 **Fix:** Probe `state.readActive(...)` first; only on a real schedule do we mutate `ephemeral` and fire `onScheduled`. Same bug & fix in macOS `NSBackgroundActivityBackedScheduler`.
-**Ref:** PR #7, commit `393421b`.
+**Ref:** PR #7, commit `393421b`. 2026-06-10: the macOS "same fix" covered only the early-return path — the lock-recheck path regressed and was re-fixed; see B-022.
 
 ### B-012 — Android `cancel()` always returned `Cancelled(1)` — 2026-04
 **Cause:** No process-local id tracking; cancel of an unknown id reported success and fired `onCancelled` regardless.
@@ -140,6 +140,41 @@ single grep finds them.
 **Cause:** Read `Clock.System.now()` directly; tests' `runTest` virtual time can't reach it — tests were lying about timing.
 **Fix:** Dispatcher computes the backoff delay locally using the policy and adds to its **injected** `now` — no wall-clock read inside dispatcher math.
 **Ref:** commit `fa573fa`.
+
+### B-021 — `WorkerRegistry.create()` calls user factory inside `synchronized(lock)` — 2026-06-10
+**Cause:** Both per-id (`it()`) and bulk (`owningFactory.create(taskId)`) factory calls run while holding the registry's `SynchronizedObject` lock. Note: atomicfu's `SynchronizedObject` IS reentrant on K/N (verified against `Synchronized.kt` in kotlinx-atomicfu — `ownerThreadId` + `reEnterCount`), so a same-thread callback does *not* deadlock. The real costs: every concurrent dispatch across all TaskIds serializes behind arbitrary user code (slow factory stalls everything), and a factory that blocks on another thread needing the lock deadlocks.
+**Fix:** Capture the factory reference inside the lock, release the lock, then invoke the factory outside it. Landed 2026-06-10. Test: `WorkerRegistryTest.factoryCanCallBackIntoRegistryDuringCreate`.
+**Ref:** `WorkerRegistry.kt::create` (identified in commonMain review 2026-06-10).
+
+### B-022 — macOS `schedule()` fired side effects before the lock-recheck — 2026-06-10
+**Cause:** The H-3/B-011 fix covered only the Keep early-return; `ephemeral.add` + the `Scheduled` emit still ran *between* the probe and the final lock-recheck. Losing the recheck produced phantom `Scheduled` events and ghost ephemeral entries. A lesson's fix must be applied to **every** probe-then-recheck site, not just the one that bit.
+**Fix:** Single authoritative `synchronized` block decides + mutates (including `ephemeral`, mirroring `cancel()`); events emitted after the lock from the recorded decision.
+**Ref:** `NSBackgroundActivityBackedScheduler.kt::schedule`.
+
+### B-023 — iOS `submit` failure left a ghost `EphemeralRegistry` entry — 2026-06-10
+**Cause:** `schedule()` adds the ephemeral entry before submission; the `BGSubmitResult.Failure` branch cleared `IOSStateStore` but not the ephemeral marker — `scheduled()`/`diagnostics()` reported a ghost task until the next cold-launch sweep.
+**Fix:** `ephemeral.remove(taskId)` next to `state.clear(taskId)` in the failure branch. Test: `BGTaskBackedSchedulerSubmitFailureTest` (uses the new injectable `submitRequest` seam).
+**Ref:** `BGTaskBackedScheduler.kt::submit`.
+
+### B-024 — `WorkerRegistry.seal()` wrote the sealed flag outside the registry lock — 2026-06-10
+**Cause:** `register()` checks `sealed` inside `synchronized(lock)` but `seal()` wrote it lock-free — a register racing `start()` could slip in after the engine began installing OS handlers (on iOS: a registered worker whose BGTask handler never gets installed).
+**Fix:** `seal()` takes the same lock. One line.
+**Ref:** `WorkerRegistry.kt::seal`.
+
+### B-025 — Android `ScheduleReplaced` decided via snapshot-then-add — 2026-06-11
+**Cause:** `WorkManagerScheduler.schedule()` read `scheduledIds.snapshot()` to decide the `ScheduleReplaced` emit, then called `add()` later — two racing `schedule()` calls could both miss (or both see) the prior entry and emit inconsistent replace events.
+**Fix:** `ScheduledIdsTracker.addAndWasPresent()` — one guarded read-modify-write. Test: `ScheduledIdsTrackerTest.addAndWasPresentReportsPriorTrackingInOneOperation`.
+**Ref:** `WorkManagerScheduler.kt::schedule`, `ScheduledIdsTracker.kt`.
+
+### B-026 — `docs/concepts/ephemeral.md` promised WorkManager retry after the ready-gate bail — 2026-06-11
+**Cause:** The doc claimed a gated ephemeral dispatch "will pick the work up again on the next dispatch". The code returns a terminal `Result.failure()` — there is no retry; the sweep purges. Docs drifted from the D-020 contract.
+**Fix:** Doc now states the purge/no-retry contract; the misleading `RegistryDispatchWorker` log line ("retry will happen after init completes") fixed in the same pass.
+**Ref:** `docs/concepts/ephemeral.md`, `RegistryDispatchWorker.kt`.
+
+### B-027 — macOS `SchedulerGuarantees` claimed schedules survive process death / reboot / force-quit — 2026-06-11
+**Cause:** `MACOS_GUARANTEES` shipped `survivesProcessDeath/Reboot/ForceQuit = true`. `NSBackgroundActivityScheduler` is in-process — registered activities die with the process and nothing relaunches the app. The public `guarantees()` API (and the docs table mirroring it) misadvertised durability that doesn't exist.
+**Fix:** All three flags `false`, with the in-process rationale at the declaration; `docs/concepts/guarantees.md` table corrected.
+**Ref:** `NSBackgroundActivityBackedScheduler.kt::MACOS_GUARANTEES`.
 
 ---
 
@@ -244,6 +279,21 @@ reader would not infer from the code. Capture the **decision** and the
 **Why over the obvious alternative:** Suspending `emit` lets a slow collector backpressure-block the producer. The iOS bridge holds the per-task `Mutex` while emitting; a slow `events()` collector would serialise every subsequent dispatch on that id. CLAUDE.md §3 forbids that. `DROP_OLDEST` is honest — collectors see the gap rather than the producer stalling.
 **Ref:** PR #28 (wave 1).
 
+### D-020 — Process-death contract: ephemeral work is purged, never retried — 2026-06-11
+**Decision:** On every platform, work that fires before the library is ready (process restarted, factories not yet registered) terminates with a failure; ephemeral entries are purged by the cold-start sweep. No `retry()` path exists for the not-ready case — ephemeral or not.
+**Why over the obvious alternative:** `Result.retry()` would resurrect work the app may no longer define (factory removed across an upgrade), pollute WorkManager's backoff counters with failures that aren't the worker's fault, and contradict the `ephemeral` flag's whole premise — "do not run from a state I didn't deliberately put it in". The app re-schedules from its own init path.
+**Ref:** owner decision 2026-06-11. `RegistryDispatchWorker.kt`, `docs/concepts/ephemeral.md`. See B-026.
+
+### D-021 — `Throwable` payloads carry bridged `causeMessage` / `causeType` strings — 2026-06-11
+**Decision:** Public event payloads that carry a `Throwable` (`MonitorEvent.LibraryError`, `AttemptFailureReason.FactoryThrew` / `WorkerThrew`) keep the raw `cause` for Kotlin consumers but `@HiddenFromObjC` it, exposing `causeMessage: String?` + `causeType: String?` (computed defaults) for Swift.
+**Why over the obvious alternative:** Dropping `cause` entirely punishes Kotlin consumers (loses stack traces); leaving it visible gives Swift an opaque `KotlinThrowable` (N-009 root cause). Hidden-plus-bridged-strings serves both. Residual wart: `copy()` / `componentN()` still mention the Kotlin type — acceptable, consumers don't construct events.
+**Ref:** `MonitorEvent.kt`; pattern follows B-015 (`@HiddenFromObjC` + Swift-friendly alternative).
+
+### D-022 — Process death: honour platform resilience, never imitate it — 2026-06-11
+**Decision:** Refines D-020 beyond ephemeral. In-flight work may try to complete. On **Android**, WorkManager's durability is honoured: a worker whose process died mid-run may be re-dispatched by the OS and complete — the library does NOT suppress it (an `InFlightMarkers` suppression mechanism was built, then deliberately reverted same-day on owner direction: "if Android can complete work it should"). On **iOS/macOS**, where no platform resilience exists, the library adds none — a run that died with its process is never replayed; iOS additionally clears dead one-shot state at `start()` (`IOSOneShotReconciliation`, snapshot-first) so the `active=true` ghost can't permanently block Keep-policy re-schedules. Scheduled-but-never-started work is *not* interrupted and runs normally where the platform persists it.
+**Why over the obvious alternative:** A uniform "never restart anywhere" contract required fighting WorkManager's core durability model — discarding real resilience to buy cross-platform sameness nobody benefits from. Honouring each platform's native semantics costs one doc paragraph; imitating resilience on Apple platforms (or suppressing it on Android) costs correctness machinery and surprises platform-native developers.
+**Ref:** owner decisions 2026-06-11 (both directions — see git history of PR #30 for the built-then-reverted suppression). Test: `IOSOneShotReconciliationTest`. Docs: `docs/concepts/guarantees.md` § Process death.
+
 ---
 
 ## NEVER DO (N)
@@ -305,12 +355,17 @@ project — beyond CLAUDE.md §13's general hard rules. Section here is for the
 ### N-011 — Never read wall-clock time inside dispatcher / scheduler logic — 2026-05-10
 **Don't:** Call `Clock.System.now()` from code under test that uses `runTest` virtual time.
 **Why:** `runTest` can't intercept the wall-clock read; tests silently lie about timing. Inject a `now: () -> Long` and add deltas to that. See B-020.
-**Ref:** PR #12, commit `fa573fa`.
+**Ref:** PR #12, commit `fa573fa`. 2026-06-11: remaining violations swept — `IOSBackoffEmulation` is now pure math over a `nowMs` param, `BGTaskBackedScheduler` takes an injected `clock`, `IOSStateStore.recordRun` requires `nowMs`. The one documented exemption: `epochMsToNSDate` (FFI boundary to an absolute-time OS API). Test: `IOSSchedulerVirtualClockTest`.
 
 ### N-012 — Never add a `WorkerContext.network` (or similar) proxy for `Reachability.shared` — 2026-05-12
 **Don't:** Wrap upstream singletons in thin library-side proxies.
 **Why:** Workers needing soft network policy can read `Reachability.shared` directly inside `execute()`. The library only gates on `WorkConstraints.networkRequired`; finer-grained logic is the worker's job. See D-003.
 **Ref:** PR #15, commit `89b63fb`.
+
+### N-013 — Never call ObjC/Foundation scheduling APIs while holding a Kotlin-side lock — 2026-06-10
+**Don't:** Call `scheduleWithBlock`, `submitTaskRequest`, or any Foundation/BackgroundTasks dispatch inside a `kotlinx.atomicfu.locks.synchronized` block.
+**Why:** Foundation takes internal locks of its own, and its callbacks re-enter Kotlin code that acquires ours — a lock-order cycle we can neither see nor control. Mutate the Kotlin-side maps under the lock, release, then make the ObjC call; a concurrent cancel/replace invalidates the activity first, making the late call a harmless no-op.
+**Ref:** `NSBackgroundActivityBackedScheduler.kt` (`schedule` / `handleOneShotRetry`), 2026-06-10 review.
 
 ---
 
@@ -348,6 +403,11 @@ match against what they're seeing.
 **Cause:** `WorkInfo` has 13+ constructor parameters and the order shifts across minor versions. Tests that build a `WorkInfo` directly break frequently.
 **Unstuck by:** Use the `WorkInfoView` projection — tests construct the projection, production maps `WorkInfo → WorkInfoView` once at the boundary. See D-006.
 **Ref:** PR #9, commit `035ac15`.
+
+### T-007 — Gradle fails at configuration with "SDK location not found" in a fresh worktree — 2026-06-10
+**Symptom:** Any `./gradlew` task dies in ~2s: `SDK location not found. Define a valid SDK location with an ANDROID_HOME environment variable or … local.properties`.
+**Cause:** `local.properties` is gitignored, so git worktrees (including `.claude/worktrees/*`) don't inherit it from the main checkout.
+**Unstuck by:** `cp <main-checkout>/local.properties <worktree>/local.properties` (SDK lives at `~/Library/Android/sdk`). Also: a piped `./gradlew … | tail` reports the *pipe's* exit code — check `BUILD SUCCESSFUL`/`FAILED` in the log, not just `$?`.
 
 ### T-006 — Pre-flight check says version is already on Maven Central, but the local literal looks newer — 2026-05-14
 **Symptom:** Release workflow `Verify version not already published` step fails on a version that should be brand new.
