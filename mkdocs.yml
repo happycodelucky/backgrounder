@@ -128,7 +128,6 @@ nav:
     - platforms/ios.md
     - platforms/macos.md
     - platforms/force-quit.md
-  - Contributing: contributing.md
   - Changelog: changelog.md
 
 # Strict mode: fail the build on a broken link or a dead anchor.
