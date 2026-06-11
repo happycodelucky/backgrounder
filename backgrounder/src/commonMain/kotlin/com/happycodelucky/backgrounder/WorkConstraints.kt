@@ -21,8 +21,12 @@ public data class WorkConstraints(
 /**
  * Network connectivity requirement for a [WorkRequest].
  *
- * iOS does not distinguish between any-network and unmetered: setting
- * [Unmetered] on iOS falls back to "any network" and is logged once via Kermit.
+ * [Unmetered] is honoured on all platforms by the library's pre-execution
+ * reachability gate (`ReachabilityStatus.isDataMetered == false`). On iOS, the
+ * OS-level scheduling hint (`BGProcessingTaskRequest.requiresNetworkConnectivity`)
+ * is downgraded to `Any` (logged once) because `BGTaskScheduler` has no
+ * metered/unmetered concept — but the gate still blocks dispatch until an
+ * unmetered connection is available.
  */
 public enum class NetworkRequirement {
     /** No network requirement — work runs regardless of connectivity. */
@@ -31,6 +35,7 @@ public enum class NetworkRequirement {
     /** Any active network. Maps to Android `CONNECTED` / iOS `requiresNetworkConnectivity = true`. */
     Any,
 
-    /** Unmetered network (Wi-Fi). Android honours this. iOS approximates as `Any`. */
+    /** Unmetered network (Wi-Fi / Ethernet). Honoured by the reachability gate on all platforms.
+     * Android additionally honours this at the OS dispatch level via `NetworkType.UNMETERED`. */
     Unmetered,
 }

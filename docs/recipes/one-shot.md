@@ -29,8 +29,8 @@ when (outcome) {
 
 ## What can go wrong
 
-- **iOS Info.plist** — every `TaskId` you schedule must appear in `BGTaskSchedulerPermittedIdentifiers`. The library reports a Kermit error during `backgrounder.start()` if it's missing; rejected at `schedule()` time with `ScheduleOutcome.Rejected`.
-- **Constraints conflict on iOS** — `NetworkRequirement.Unmetered` is logged-and-ignored (iOS has no metered/unmetered distinction).
+- **iOS Info.plist** — every `TaskId` you schedule must appear in `BGTaskSchedulerPermittedIdentifiers`. The library logs an error during `backgrounder.start()` if it's missing; rejected at `schedule()` time with `ScheduleOutcome.Rejected`.
+- **Constraints conflict on iOS** — `NetworkRequirement.Unmetered` is honoured by the library's pre-execution reachability gate (`isDataMetered == false`), but the OS-level scheduling hint (`BGProcessingTaskRequest.requiresNetworkConnectivity`) is downgraded to `Any` with a log warning — iOS's BGTaskScheduler has no metered/unmetered distinction at the dispatch level.
 - **Backoff policy with too-small initial delay** — minimum is 10 seconds, validated at construction.
 
 ## Conflict policy

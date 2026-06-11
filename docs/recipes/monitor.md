@@ -20,7 +20,7 @@ backgrounder.events()
     }
 ```
 
-`events()` returns a `SharedFlow<MonitorEvent>` — hot, non-replaying, `replay = 0, extraBufferCapacity = 64, onBufferOverflow = DROP_OLDEST`. Late collectors see only events emitted after they subscribe; sustained back-pressure drops the oldest unread events first so the producer is never blocked (CLAUDE.md §3 — scheduler dispatch must not pin on observers).
+`events()` returns a `SharedFlow<MonitorEvent>` — hot, non-replaying, `replay = 0, extraBufferCapacity = 64, onBufferOverflow = DROP_OLDEST`. Late collectors see only events emitted after they subscribe; sustained back-pressure drops the oldest unread events first so the producer is never blocked — scheduler dispatch never pins on observers.
 
 Swift sees this as `AsyncSequence<MonitorEvent>`. Use `onEnum(of:)` for exhaustive switching.
 

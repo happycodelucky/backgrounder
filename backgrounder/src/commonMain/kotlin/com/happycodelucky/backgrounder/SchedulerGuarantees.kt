@@ -12,9 +12,9 @@ import kotlin.time.Duration
  *
  * | Field                        | Android | iOS 18 | macOS 15 |
  * |------------------------------|---------|--------|----------|
- * | survivesProcessDeath         | true    | true   | true     |
- * | survivesReboot               | true    | true   | true     |
- * | survivesForceQuit            | **true**| **false** | true  |
+ * | survivesProcessDeath         | true    | true   | **false** (in-process) |
+ * | survivesReboot               | true    | true   | **false** |
+ * | survivesForceQuit            | **true**| **false** | **false** |
  * | honoursWallClock             | approx  | **false** (hint only) | approx |
  * | supportsRetryBackoff         | true    | true (emulated) | true (emulated) |
  * | cancelsInFlight              | **true**| **false** | true  |

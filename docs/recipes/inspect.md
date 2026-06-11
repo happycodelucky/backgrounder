@@ -39,7 +39,7 @@ backgrounder.events()
     .collect { e -> println("${e.taskId} finished in ${e.runtime}: ${e.result}") }
 ```
 
-`MonitorEvent` is a sealed interface — Swift consumers get an exhaustive `enum` via SKIE's `onEnum(of:)`, and the same on Kotlin via `when`.
+`MonitorEvent` is a sealed interface — Swift consumers get an exhaustive `enum` via `onEnum(of:)`, and the same on Kotlin via `when`.
 
 ## Registered factories and platform diagnostics
 

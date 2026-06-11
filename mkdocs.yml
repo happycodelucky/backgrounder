@@ -1,4 +1,4 @@
-# Backgrounder docs site (CLAUDE.md §10 / plan §"Documentation site").
+# Backgrounder docs site.
 #
 # Source of truth for docs structure. Auto-discovery is deliberately disabled —
 # explicit `nav:` keeps page ordering deterministic, the way Wire does it.
