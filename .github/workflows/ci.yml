@@ -49,7 +49,7 @@ jobs:
           echo "Computed CI version: $VERSION"
 
       # `mise run check` runs ktlint + every unit test on every target
-      # (iosSimulatorArm64Test, macosArm64Test, testAndroidHostTest).
+      # (iosSimulatorArm64Test, macosArm64Test, testAndroidHostTest, jvmTest).
       # `mise run xcframework` builds the KMMBridge-consumable artifact
       # (CLAUDE.md §9). The CI version stamp is passed through to Gradle via
       # ORG_GRADLE_PROJECT_version — the standard env-var form of

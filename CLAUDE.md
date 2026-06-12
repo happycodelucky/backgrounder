@@ -10,14 +10,15 @@ Rules for working in this repo. Read before starting any task.
 
 **Not shared:** UI. Each platform ships its own native UI layer (SwiftUI on iOS, Jetpack Compose on Android, SwiftUI/AppKit on macOS desktop, native web on the web target). **Do not add Compose Multiplatform.** Do not propose it. The shared module is headless.
 
-**Targets — ARM only, no exceptions:**
+**Targets — native targets are ARM only, no exceptions:**
 
 - `iosArm64` (device) + `iosSimulatorArm64` (Apple Silicon simulator)
 - Android `arm64-v8a`
 - `macosArm64` (desktop)
+- `jvm` (desktop / server) — architecture-neutral bytecode, so the ARM-only rule has nothing to say here. JVM 21+. Scheduling is in-process (library-owned coroutines).
 - `wasmJs` — stretch goal; design to not preclude it, don't block Tier 1 work on it
 
-**Out of scope:** all x86/x86_64, `armeabi-v7a`, Intel Macs, watchOS, tvOS, Linux, Windows, Kotlin/JS legacy.
+**Out of scope:** all x86/x86_64 *native* slices, `armeabi-v7a`, Intel Macs, watchOS, tvOS, Linux/Windows *native* targets (Linux and Windows are served by the `jvm` target), Kotlin/JS legacy.
 
 ---
 
@@ -88,6 +89,7 @@ Everything else we author — classes, files, top-level functions, top-level `va
   /src/androidMain    match (`com.happycodelucky.backgrounder:backgrounder`).
   /src/iosMain
   /src/macosMain
+  /src/jvmMain        desktop / server JVM (in-process coroutine scheduler)
   /src/wasmJsMain     stretch
 /iOSApp               Xcode project, native SwiftUI, consumes /backgrounder via SPM
 /androidApp           Android entrypoint, native Jetpack Compose UI

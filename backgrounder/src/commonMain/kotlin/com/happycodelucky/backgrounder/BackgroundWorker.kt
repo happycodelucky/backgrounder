@@ -13,7 +13,7 @@ import kotlin.native.ObjCName
  *
  * `execute()` runs on a coroutine dispatcher chosen by the platform actual:
  * - Android: WorkManager's executor (effectively `Dispatchers.Default`).
- * - iOS / macOS: a `SupervisorJob`-rooted scope on `Dispatchers.Default`.
+ * - iOS / macOS / JVM: a `SupervisorJob`-rooted scope on `Dispatchers.Default`.
  *
  * Always a `suspend fun`. **No `@Throws(CancellationException::class)`** —
  * this repo uses SKIE, which bridges `suspend fun` as Swift `async throws`

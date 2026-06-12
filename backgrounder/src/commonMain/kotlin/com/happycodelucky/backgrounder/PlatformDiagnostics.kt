@@ -73,8 +73,9 @@ public data class PlatformDiagnostics(
  *  - iOS reads `BGTaskSchedulerPermittedIdentifiers` from `Info.plist` and
  *    queries `UIApplication.backgroundRefreshStatus`.
  *  - Android queries `WorkManager.isInitialized()`.
- *  - macOS has no equivalent OS-level config to check; returns [PlatformDiagnostics.Healthy]
- *    plus any common diagnostics (e.g. registry-not-sealed).
+ *  - macOS / JVM have no equivalent OS-level config to check; they return
+ *    [PlatformDiagnostics.Healthy] plus any common diagnostics (e.g.
+ *    registry-not-sealed).
  *
  * The receiver supplies the engine's registry / start state; per-platform
  * implementations consult OS APIs and produce the platform-specific cases.

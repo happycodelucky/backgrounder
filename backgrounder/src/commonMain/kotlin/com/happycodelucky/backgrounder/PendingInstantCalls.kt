@@ -17,7 +17,7 @@ import kotlinx.coroutines.Job
  * Each [Entry] is a single-cell handle: the `runNow` caller registers the
  * entry, submits the platform request, then awaits [Entry.deferred]. The
  * platform handler (Android `InstantDispatchWorker`, iOS `IOSCoroutineBridge`,
- * macOS launched coroutine) [take]s the entry, runs the `task` lambda,
+ * macOS / JVM launched coroutine) [take]s the entry, runs the `task` lambda,
  * completes the deferred, and the caller resumes. Cancellation paths complete
  * the deferred with [kotlin.coroutines.cancellation.CancellationException].
  *

@@ -94,7 +94,7 @@ The platform layer reports `WorkResult.Failure(message)` to the OS (so iOS / Wor
 
 - **iOS** — `runNow` uses `UIApplication.beginBackgroundTask(withName:expirationHandler:)`, **not** `BGTaskScheduler`. The `TaskId` does *not* need to appear in `Info.plist`'s `BGTaskSchedulerPermittedIdentifiers`; it's purely an in-process pre-emption key. iOS grants ~30 seconds of grace if the app backgrounds mid-call.
 - **Android** — `runNow` enqueues a unique `OneTimeWorkRequest` under the name `${taskId}::runNow` (won't collide with a scheduled run that uses `${taskId}` as its unique name).
-- **macOS** — `runNow` spawns the lambda on Backgrounder's owned `SupervisorJob` scope. macOS apps generally have foreground time; there's no OS-level "background runway" wrapping the call.
+- **macOS / JVM** — `runNow` spawns the lambda on Backgrounder's owned `SupervisorJob` scope. macOS apps generally have foreground time, and a JVM process is fully yours; there's no OS-level "background runway" wrapping the call on either.
 
 ## What can go wrong
 

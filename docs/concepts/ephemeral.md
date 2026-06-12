@@ -21,6 +21,7 @@ Without protection, the worker tries to resolve dependencies against a half-init
 | Android  | `Application.onCreate` is running for a fresh process. | Inside `Backgrounder.create(application)` — the constructor runs the sweep eagerly before returning. |
 | iOS      | A new process invocation of `application(_:didFinishLaunchingWithOptions:)`. | Top of `backgrounder.start()` (before any `BGTaskScheduler.register(...)`). |
 | macOS    | A new process invocation of `applicationDidFinishLaunching`. | Top of `backgrounder.start()` (same as iOS). |
+| JVM      | A new JVM process running your `main()` / composition root. | Top of `backgrounder.start()` (same as iOS). |
 
 ## Android backstop
 

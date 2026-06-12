@@ -1,9 +1,6 @@
-package com.happycodelucky.backgrounder.macos
+package com.happycodelucky.backgrounder
 
 import co.touchlab.kermit.Logger
-import com.happycodelucky.backgrounder.InstantRunner
-import com.happycodelucky.backgrounder.PendingInstantCalls
-import com.happycodelucky.backgrounder.TaskId
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
@@ -14,25 +11,38 @@ import kotlinx.coroutines.launch
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
- * macOS [InstantRunner] — runs the lambda on a library-owned `SupervisorJob`
- * scope (no platform scheduler). `NSBackgroundActivityScheduler` is
- * interval-shaped and a poor fit for one-shot work; on macOS the app is
- * generally foregrounded, so we don't need OS-granted background time for
- * `runNow`.
+ * Desktop-class [InstantRunner] — runs the lambda on a library-owned `SupervisorJob`
+ * scope, with no platform scheduler in the path.
  *
- * Owns its own `CoroutineScope("Backgrounder.macOS.runNow")` distinct from
- * `NSBackgroundActivityBackedScheduler`'s scheduling scope (CLAUDE.md §3 — one
- * clear owner per scope). [shutdown] cancels it; the macOS builder threads
- * shutdown through `Backgrounder.shutdown` alongside the scheduler.
+ * Used by the platforms where no OS primitive mediates one-shot foreground work:
+ *  - **macOS** — `NSBackgroundActivityScheduler` is interval-shaped and a poor
+ *    fit for one-shot work; the app is generally foregrounded, so we don't need
+ *    OS-granted background time for `runNow`.
+ *  - **JVM** (desktop / server) — there is no OS background scheduler at all;
+ *    the process is fully ours.
+ *
+ * iOS (`UIBackgroundTaskInstantRunner`) and Android (`WorkManagerInstantRunner`)
+ * route through their OS primitives instead, to earn background runtime if the
+ * app is suspended mid-call.
+ *
+ * Owns its own `CoroutineScope("Backgrounder.<platformLabel>.runNow")` distinct
+ * from the platform scheduler's scheduling scope (CLAUDE.md §3 — one clear owner
+ * per scope). [shutdown] cancels it; each platform builder threads shutdown
+ * through `Backgrounder.shutdown` alongside the scheduler.
+ *
+ * @param platformLabel short platform discriminator (`"macOS"`, `"JVM"`) baked
+ *   into the Kermit tag and the scope's [CoroutineName] so logs and debugger
+ *   coroutine dumps read the same as before the runner was shared.
  */
 internal class LibraryScopeInstantRunner(
     private val pending: PendingInstantCalls,
+    platformLabel: String,
 ) : InstantRunner {
-    private val log = Logger.withTag("Backgrounder/macOS/InstantRunner")
+    private val log = Logger.withTag("Backgrounder/$platformLabel/InstantRunner")
 
     private val scope: CoroutineScope =
         CoroutineScope(
-            SupervisorJob() + Dispatchers.Default + CoroutineName("Backgrounder.macOS.runNow"),
+            SupervisorJob() + Dispatchers.Default + CoroutineName("Backgrounder.$platformLabel.runNow"),
         )
 
     override suspend fun <R> run(
@@ -86,9 +96,9 @@ internal class LibraryScopeInstantRunner(
         return true
     }
 
-    /** Cancel the runner-owned scope. Called from `Backgrounder.shutdown` via the macOS builder. */
+    /** Cancel the runner-owned scope. Called from `Backgrounder.shutdown` via the platform builder. */
     fun shutdown() {
-        log.i { "shutdown: cancelling Backgrounder.macOS.runNow scope" }
+        log.i { "shutdown: cancelling the runNow scope" }
         scope.cancel(CancellationException("LibraryScopeInstantRunner.shutdown"))
     }
 }

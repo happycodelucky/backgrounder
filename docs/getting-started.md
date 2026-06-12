@@ -2,7 +2,7 @@
 
 Goal: a single working `BackgroundWorker` invocation from `commonMain`, dispatched by your platform's native scheduler.
 
-There are three steps regardless of platform: *create*, *register*, *start*. The concrete code per step changes a bit between Android, iOS, and macOS — pick the tab that matches the platform you're building for first.
+There are three steps regardless of platform: *create*, *register*, *start*. The concrete code per step changes a bit between Android, iOS, macOS, and the JVM — pick the tab that matches the platform you're building for first.
 
 ## 1. Add Backgrounder to your build
 
@@ -160,6 +160,26 @@ The factory closure you pass to `register(...)` is where DI happens — pass a c
     ```
 
     No `Info.plist` work needed; `NSBackgroundActivityScheduler` owns scheduling lifetime.
+
+=== "JVM"
+
+    ```kotlin title="Main.kt"
+    fun main() {
+        val backgrounder = Backgrounder.create()
+        backgrounder.register(SyncWorker.ID) {
+            SyncWorker(repo = appGraph.repository)
+        }
+        backgrounder.start()
+
+        Runtime.getRuntime().addShutdownHook(
+            Thread { backgrounder.shutdown() },
+        )
+
+        // … run your app …
+    }
+    ```
+
+    Scheduling is in-process (library-owned coroutines), so schedules die with the JVM — re-schedule from your init path at each launch. See [Platforms → JVM](platforms/jvm.md).
 
 ## 4. Schedule
 

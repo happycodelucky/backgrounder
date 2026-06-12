@@ -60,6 +60,12 @@ kermit = "2.0.8"
 # (Unmetered / Metered / Constrained) into a single `isDataMetered: Boolean`
 # on `ReachabilityStatus`, and renamed `reachable` → `isReachable`. 0.13.0 is an
 # API-compatible bump (no source changes) built against Kotlin 2.3.21.
+#
+# NOTE: this repo's `jvm()` target needs reachable to publish a jvm artifact
+# (both `:reachable` and `:reachable-testing`). 0.13.0 ships android + Apple
+# slices only — bump this pin to the first jvm-enabled release as soon as it
+# lands on Central, or `:backgrounder:compileKotlinJvm` fails dependency
+# resolution.
 reachable = "0.13.0"
 
 # --- Testing ----------------------------------------------------------------

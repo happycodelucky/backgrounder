@@ -9,6 +9,7 @@
   <img src="https://img.shields.io/badge/iOS-18%2B-blue.svg?style=for-the-badge&logo=apple" alt="iOS 18+">
   <img src="https://img.shields.io/badge/macOS-15%2B-blue.svg?style=for-the-badge&logo=apple" alt="macOS 15+">
   <img src="https://img.shields.io/badge/Android-11%2B-3DDC84.svg?style=for-the-badge&logo=android&logoColor=white" alt="Android 11+">
+  <img src="https://img.shields.io/badge/JVM-21%2B-orange.svg?style=for-the-badge&logo=openjdk&logoColor=white" alt="JVM 21+">
   <img src="https://img.shields.io/badge/Kotlin-2.3-7F52FF.svg?style=for-the-badge&logo=kotlin&logoColor=white" alt="Kotlin 2.3">
   <a href="https://github.com/happycodelucky/backgrounder/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/happycodelucky/backgrounder/ci.yml?style=for-the-badge&label=ci" alt="CI"></a>
   <a href="https://github.com/happycodelucky/backgrounder/actions/workflows/docs.yml"><img src="https://img.shields.io/github/actions/workflow/status/happycodelucky/backgrounder/docs.yml?style=for-the-badge&label=docs" alt="Docs"></a>
@@ -22,6 +23,7 @@ Backgrounder wraps each platform's background-scheduling primitive behind one AP
 - **Android**: Jetpack `WorkManager` (one-shot + periodic, with constraints, retry, expedited).
 - **iOS 18+**: `BGTaskScheduler` (one-shot + library-emulated periodic; force-quit caveat documented).
 - **macOS 15+**: Foundation's `NSBackgroundActivityScheduler` (one-shot + native periodic).
+- **JVM 21+** (desktop / server): library-owned coroutines (one-shot + periodic; in-process, nothing survives the process).
 
 Full documentation lives at [happycodelucky.github.io/backgrounder](https://happycodelucky.github.io/backgrounder/).
 
@@ -31,7 +33,8 @@ Full documentation lives at [happycodelucky.github.io/backgrounder](https://happ
 
 Backgrounder publishes to Maven Central. From a Kotlin Multiplatform project,
 depend on the artifact from `commonMain` — KMP resolves the right per-target
-slice (Android AAR, `iosArm64`, `iosSimulatorArm64`, `macosArm64`) for you:
+slice (Android AAR, `jvm` JAR, `iosArm64`, `iosSimulatorArm64`, `macosArm64`)
+for you:
 
 ```kotlin
 // shared/build.gradle.kts
@@ -105,7 +108,7 @@ backgrounder.schedule(
 )
 ```
 
-`networkRequired` is honoured everywhere — Android holds the worker via WorkManager's native constraint gating; iOS and macOS use a library-managed pre-execution reachability gate (powered by [reachable](https://github.com/happycodelucky/reachable)) that waits up to 5 seconds before short-circuiting to `WorkResult.Retry`. See [Recipes → Require a network connection](https://happycodelucky.github.io/backgrounder/recipes/network-required/).
+`networkRequired` is honoured everywhere — Android holds the worker via WorkManager's native constraint gating; iOS, macOS, and the JVM use a library-managed pre-execution reachability gate (powered by [reachable](https://github.com/happycodelucky/reachable)) that waits up to 5 seconds before short-circuiting to `WorkResult.Retry`. See [Recipes → Require a network connection](https://happycodelucky.github.io/backgrounder/recipes/network-required/).
 
 Or for "do this work in the background **right now** and give me back the typed result" — no constraints, no retries, structured `await` — use `runNow`:
 
@@ -115,7 +118,7 @@ val saved: SavedDocument = backgrounder.runNow(saveTaskId) {
 }
 ```
 
-`runNow` runs on the platform's real background primitive so the work survives if the user backgrounds the app mid-call — `UIApplication.beginBackgroundTask` on iOS, `WorkManager` on Android, a library scope on macOS. See the [Run now recipe](https://happycodelucky.github.io/backgrounder/recipes/run-now/) for the full contract.
+`runNow` runs on the platform's real background primitive so the work survives if the user backgrounds the app mid-call — `UIApplication.beginBackgroundTask` on iOS, `WorkManager` on Android, a library scope on macOS and the JVM. See the [Run now recipe](https://happycodelucky.github.io/backgrounder/recipes/run-now/) for the full contract.
 
 ---
 

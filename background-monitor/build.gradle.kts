@@ -56,6 +56,9 @@ kotlin {
     iosArm64()
     iosSimulatorArm64()
     macosArm64()
+    // Architecture-neutral JVM (desktop / server) — matches the core's target
+    // roster so a JVM consumer of :backgrounder can layer the monitor on top.
+    jvm()
 
     @OptIn(ExperimentalKotlinGradlePluginApi::class)
     android {

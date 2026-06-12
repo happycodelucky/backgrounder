@@ -37,10 +37,11 @@
 #   (Renamed from `:shared`; the directory and Gradle module name now match
 #   the published Maven artifact id `com.happycodelucky.backgrounder:backgrounder`.)
 # - Tests on each target run independently. The "fast" macOS path covers
-#   commonTest and is the right inner loop. iOS simulator tests are slower
-#   (boot a simulator per task) and live under `test:apple`.
+#   commonTest and is the right inner loop (test:jvm is even faster — no K/N
+#   compile — and additionally covers the JVM scheduler). iOS simulator tests
+#   are slower (boot a simulator per task) and live under `test:apple`.
 # - `check` mirrors CI: ktlint + every unit test target (commonTest +
-#   iosSimulatorArm64Test + macosArm64Test + androidHostTest).
+#   iosSimulatorArm64Test + macosArm64Test + androidHostTest + jvmTest).
 # - Lowercase ios/macos in task names is fine — these are CLI tokens, not
 #   source-identifier symbols. The Apple-casing rule (CLAUDE.md §3) still
 #   applies to file names, types, and comments below.
@@ -118,6 +119,10 @@ run = "./gradlew :backgrounder:macosArm64Test"
 description = "Android host unit tests"
 run = "./gradlew :backgrounder:testAndroidHostTest"
 
+[tasks."test:jvm"]
+description = "JVM unit tests (fastest target — no K/N compile, covers commonTest + the JVM scheduler)"
+run = "./gradlew :backgrounder:jvmTest"
+
 [tasks."test:ios"]
 description = "iOS simulator arm64 tests (slower — boots a simulator)"
 run = "./gradlew :backgrounder:iosSimulatorArm64Test"
@@ -128,7 +133,7 @@ depends = ["test", "test:ios"]
 
 [tasks."test:all"]
 description = "Every test target across every platform"
-depends = ["test", "test:ios", "test:android"]
+depends = ["test", "test:ios", "test:android", "test:jvm"]
 
 # ── Lint / format ──────────────────────────────────────────────────────────
 

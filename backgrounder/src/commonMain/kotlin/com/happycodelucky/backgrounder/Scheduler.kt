@@ -17,6 +17,8 @@ import kotlin.native.ObjCName
  * - iOS:     `BGTaskBackedScheduler` (backed by `BGTaskScheduler`).
  * - macOS:   `NSBackgroundActivityBackedScheduler` (backed by Foundation's
  *            `NSBackgroundActivityScheduler`).
+ * - JVM:     `CoroutineBackedScheduler` (backed by library-owned coroutines —
+ *            the JVM has no OS background scheduler).
  *
  * Most methods are non-suspend because both `WorkManager.enqueue` and
  * `BGTaskScheduler.submit` are non-blocking. [scheduled] is `suspend` because

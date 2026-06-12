@@ -10,16 +10,16 @@ import kotlin.time.Duration
  *
  * v1 values per platform:
  *
- * | Field                        | Android | iOS 18 | macOS 15 |
- * |------------------------------|---------|--------|----------|
- * | survivesProcessDeath         | true    | true   | **false** (in-process) |
- * | survivesReboot               | true    | true   | **false** |
- * | survivesForceQuit            | **true**| **false** | **false** |
- * | honoursWallClock             | approx  | **false** (hint only) | approx |
- * | supportsRetryBackoff         | true    | true (emulated) | true (emulated) |
- * | cancelsInFlight              | **true**| **false** | true  |
- * | minimumPeriodicInterval      | 15 min  | 15 min recommended | 1 sec |
- * | maxConcurrentTasks           | null    | ~1000  | null     |
+ * | Field                        | Android | iOS 18 | macOS 15 | JVM |
+ * |------------------------------|---------|--------|----------|-----|
+ * | survivesProcessDeath         | true    | true   | **false** (in-process) | **false** (in-process) |
+ * | survivesReboot               | true    | true   | **false** | **false** |
+ * | survivesForceQuit            | **true**| **false** | **false** | **false** |
+ * | honoursWallClock             | approx  | **false** (hint only) | approx | approx |
+ * | supportsRetryBackoff         | true    | true (emulated) | true (emulated) | true (emulated) |
+ * | cancelsInFlight              | **true**| **false** | true  | true |
+ * | minimumPeriodicInterval      | 15 min  | 15 min recommended | 1 sec | 1 sec |
+ * | maxConcurrentTasks           | null    | ~1000  | null     | null |
  */
 public data class SchedulerGuarantees(
     public val survivesProcessDeath: Boolean,
