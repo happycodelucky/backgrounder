@@ -6,7 +6,7 @@ hide:
 
 # Backgrounder
 
-**One Kotlin Multiplatform API for background work.** Schedule a job from `commonMain`; it runs on `WorkManager` on Android, on `BGTaskScheduler` on iOS, and on `NSBackgroundActivityScheduler` on native macOS. No DI container required — workers are factory-built per dispatch from a closure you provide, so any DI graph you already have (Koin, Hilt, hand-wired) plugs in cleanly.
+**One Kotlin Multiplatform API for background work.** Schedule a job from `commonMain`; it runs on `WorkManager` on Android, on `BGTaskScheduler` on iOS, on `NSBackgroundActivityScheduler` on native macOS, and on library-owned coroutines on the JVM (desktop / server). No DI container required — workers are factory-built per dispatch from a closure you provide, so any DI graph you already have (Koin, Hilt, hand-wired) plugs in cleanly.
 
 ```kotlin
 // commonMain

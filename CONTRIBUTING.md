@@ -32,7 +32,7 @@ After that, the `mise run …` task surface (below) is the recommended entry poi
 The mise tasks below wrap `./gradlew` — pick whichever surface you prefer.
 
 ```bash
-mise run check          # ktlint + every unit test (iOS sim, macOS, Android host)
+mise run check          # ktlint + every unit test (iOS sim, macOS, Android host, JVM)
 mise run build:ios      # iOS device + Apple Silicon simulator debug frameworks
 mise run build:macos    # macOS desktop debug framework
 mise run xcframework    # release Backgrounder.xcframework

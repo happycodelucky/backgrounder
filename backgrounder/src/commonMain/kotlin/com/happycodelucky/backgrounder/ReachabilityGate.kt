@@ -12,7 +12,8 @@ import kotlin.time.Duration.Companion.seconds
  * until [Reachability] reports the requirement is satisfied.
  *
  * Closes the iOS / macOS gap where Apple's background-task primitives either
- * advisory-honour or entirely ignore `WorkConstraints.networkRequired`. The
+ * advisory-honour or entirely ignore `WorkConstraints.networkRequired` — and
+ * the JVM gap, where no OS constraint concept exists at all. The
  * gate is invisible to user worker code — schedulers / dispatchers call
  * [awaitReachable] between the OS firing the worker and `worker.execute(...)`
  * being invoked. On timeout the caller short-circuits to [WorkResult.Retry]

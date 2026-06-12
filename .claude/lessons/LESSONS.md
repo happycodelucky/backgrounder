@@ -299,6 +299,11 @@ reader would not infer from the code. Capture the **decision** and the
 **Why over the obvious alternative:** A PNG banner can't theme-switch palettes cleanly, bloats the repo, and blurs on retina; referencing `logo-*.svg` from inside the banner renders blank on GitHub. Mutable facts (platforms, versions, CI state) stay in markdown badges/text where they're cheap to edit.
 **Ref:** `docs/assets/banner-light.svg`, `docs/assets/banner-dark.svg`, README header.
 
+### D-024 — JVM target: pure coroutine scheduler; desktop instant runner promoted to commonMain — 2026-06-11
+**Decision:** The `jvm()` target schedules with library-owned coroutines (`CoroutineBackedScheduler`: one lazy `Job` per request, `delay`-driven, injected dispatcher + clock per N-011) — there is no OS primitive to delegate to. `LibraryScopeInstantRunner` moved macosMain → commonMain with a `platformLabel` param (pure Kotlin; macOS + JVM share it, avoiding the B-011/B-022 duplicate-drift trap). Guarantees mirror macOS: all survival flags false. Terminal one-shots clear their own tracking (jobs/attempts/ephemeral) — `scheduled()` reports only live work.
+**Why over the obvious alternative:** Wrapping `java.util.Timer`/`ScheduledExecutorService` adds a thread pool the coroutine runtime already provides, and loses virtual-time testability. The jvm target requires reachable ≥ the first jvm-enabled release (0.13.0 has no jvm artifact); pin note in libs.versions.toml.
+**Ref:** `backgrounder/src/jvmMain/`, `CoroutineBackedSchedulerTest` (exact-timing virtual-clock suite).
+
 ---
 
 ## NEVER DO (N)
@@ -414,6 +419,11 @@ match against what they're seeing.
 **Symptom:** Any `./gradlew` task dies in ~2s: `SDK location not found. Define a valid SDK location with an ANDROID_HOME environment variable or … local.properties`.
 **Cause:** `local.properties` is gitignored, so git worktrees (including `.claude/worktrees/*`) don't inherit it from the main checkout.
 **Unstuck by:** `cp <main-checkout>/local.properties <worktree>/local.properties` (SDK lives at `~/Library/Android/sdk`). Also: a piped `./gradlew … | tail` reports the *pipe's* exit code — check `BUILD SUCCESSFUL`/`FAILED` in the log, not just `$?`.
+
+### T-008 — Flow collector in runTest's backgroundScope misses the final emission — 2026-06-11
+**Symptom:** A test collecting `Backgrounder.events()` into a list via `backgroundScope.launch { flow.collect { … } }` asserts on the *last* event emitted before idle — and the list is missing exactly that event, intermittently by test shape.
+**Cause:** `advanceUntilIdle()` stops when *foreground* work is idle; the background collector's final resumption can still be queued at current virtual time.
+**Unstuck by:** `runCurrent()` after the last `advanceUntilIdle()` — it flushes current-time tasks regardless of foreground/background. See `CoroutineBackedSchedulerTest.noFactoryRegisteredSkipsStructurallyWithoutRetry`.
 
 ### T-006 — Pre-flight check says version is already on Maven Central, but the local literal looks newer — 2026-05-14
 **Symptom:** Release workflow `Verify version not already published` step fails on a version that should be brand new.

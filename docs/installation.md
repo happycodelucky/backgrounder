@@ -1,9 +1,9 @@
 # Installation
 
 Backgrounder publishes to Maven Central as a Kotlin Multiplatform artifact.
-The Android AAR is consumed directly from Gradle. Apple consumers come in via
-the same artifact's `iosArm64`, `iosSimulatorArm64`, and `macosArm64` klibs —
-i.e. by depending on `:backgrounder` from a KMP project.
+The Android AAR and the JVM JAR are consumed directly from Gradle. Apple
+consumers come in via the same artifact's `iosArm64`, `iosSimulatorArm64`, and
+`macosArm64` klibs — i.e. by depending on `:backgrounder` from a KMP project.
 
 Pure-Swift apps (no Kotlin Multiplatform in the project) consume Backgrounder
 through Swift Package Manager — a prebuilt, SKIE-enhanced `Backgrounder.xcframework`
@@ -16,6 +16,7 @@ delivered as a GitHub Release asset (see [Apple-side SPM](#apple-side-spm) below
 | Android   | `arm64-v8a`, minSdk 30                                |
 | iOS       | iOS 18.0                                              |
 | macOS     | macOS 15.0 (Apple Silicon)                            |
+| JVM       | Java 21 (desktop / server, any architecture)          |
 | Toolchain | Kotlin 2.3.x (K2), Gradle 9.x, AGP 9.x, JVM target 21 |
 
 These are deliberately tight floors — see [Concepts → Architecture](concepts/architecture.md)

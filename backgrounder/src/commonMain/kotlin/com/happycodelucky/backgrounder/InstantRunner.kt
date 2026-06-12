@@ -10,8 +10,9 @@ package com.happycodelucky.backgrounder
  *    `taskId`, dispatched via the standalone `InstantDispatchWorker`).
  *  - iOS: `BGTaskInstantRunner` (one-shot `BGProcessingTaskRequest`, routed
  *    through a parallel branch in `IOSCoroutineBridge`).
- *  - macOS: `LibraryScopeInstantRunner` (no platform scheduler — runs on the
- *    macOS-owned `SupervisorJob` scope).
+ *  - macOS / JVM: [LibraryScopeInstantRunner] (no platform scheduler — runs on
+ *    a library-owned `SupervisorJob` scope; shared implementation in
+ *    `commonMain`).
  *
  * **Pre-emption invariant.** The contract — enforced by [Backgrounder.runNow] —
  * is that calls for the same `taskId` are *last-wins*: each new call cancels

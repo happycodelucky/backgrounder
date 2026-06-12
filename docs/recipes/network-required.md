@@ -27,8 +27,9 @@ Three values:
 | Android | Native — `WorkManager` refuses to dispatch the worker until the constraint is met. The OS holds the worker indefinitely. | OS-managed (no library timeout). |
 | iOS | Library-managed pre-execution gate. The bridge reads reachability via the [`reachable`](https://github.com/happycodelucky/reachable) library and waits up to `min(5s, capabilities.maxExecutionTime / 4)` for the requirement to become true. | Capped at 5 s; budget-derived (≈30 s App Refresh → 5 s, several-minute BGProcessing → 5 s). |
 | macOS | Same library-managed gate as iOS. `NSBackgroundActivityScheduler` has no constraint concept; the library fills the gap. | 5 s cap (5-minute generous budget → 5 s). |
+| JVM | Same library-managed gate. The JVM has no OS constraint concept at all; the library fills the gap. | 5 s cap (unbounded budget → 5 s). |
 
-On Apple platforms, if the network never comes up inside the gate's window, the worker is **not invoked** — the bridge short-circuits to `WorkResult.Retry` and the scheduler reschedules per the request's `BackoffPolicy`. The user's `execute()` body never sees an offline state caused by the constraint.
+On the gate-managed platforms (iOS, macOS, JVM), if the network never comes up inside the gate's window, the worker is **not invoked** — the bridge short-circuits to `WorkResult.Retry` and the scheduler reschedules per the request's `BackoffPolicy`. The user's `execute()` body never sees an offline state caused by the constraint.
 
 ## Why a 5-second cap on Apple
 

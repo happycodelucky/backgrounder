@@ -25,6 +25,7 @@ import kotlin.native.ObjCName
  *   - `androidMain`: [Backgrounder.Companion.create] taking an `Application`.
  *   - `iosMain`: [Backgrounder.Companion.create] (no required args).
  *   - `macosMain`:   [Backgrounder.Companion.create] (no required args).
+ *   - `jvmMain`: [Backgrounder.Companion.create] (no required args).
  *
  * `@OptIn(ExperimentalObjCName::class)`: standard SKIE annotation; stable in
  * practice and required for boundary refinement (CLAUDE.md §8).
@@ -191,9 +192,10 @@ public class Backgrounder internal constructor(
      *    and [taskId] does **not** need to be `register()`-ed first;
      *  - is routed through the OS scheduling primitive on Android (`WorkManager`)
      *    and iOS (`BGTaskScheduler`) so the work earns background runtime if
-     *    the app is suspended mid-call; on macOS it runs on a library-owned
-     *    `SupervisorJob` scope (`NSBackgroundActivityScheduler` is interval-shaped
-     *    and a poor fit for one-shot work).
+     *    the app is suspended mid-call; on macOS and the JVM it runs on a
+     *    library-owned `SupervisorJob` scope (`NSBackgroundActivityScheduler`
+     *    is interval-shaped and a poor fit for one-shot work; the JVM has no
+     *    platform scheduler at all).
      *
      * **Pre-emption — "last call wins".** If a `runNow` is already in flight
      * for [taskId], or a scheduled run for [taskId] is pending or executing,
@@ -277,7 +279,7 @@ public class Backgrounder internal constructor(
      * Tear down library-owned coroutine scopes (CLAUDE.md §3 — every scope has
      * a clear owner with a defined cancellation lifecycle).
      *
-     * **iOS / macOS:** cancels the scope owned by the platform scheduler /
+     * **iOS / macOS / JVM:** cancels the scope owned by the platform scheduler /
      * coroutine bridge. In-flight workers observe a `CancellationException`;
      * the per-task completion guard reports the iOS-level task as
      * `setTaskCompletedWithSuccess(false)` exactly once.

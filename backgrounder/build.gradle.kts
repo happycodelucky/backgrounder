@@ -4,9 +4,11 @@
  * Backgrounder — :backgrounder module.
  *
  * Headless KMP module: business logic only, no UI dependencies (CLAUDE.md §1, §7).
- * Targets are ARM-only per CLAUDE.md §1: iosArm64, iosSimulatorArm64, Android
- * arm64-v8a (via the new com.android.kotlin.multiplatform.library plugin), and
- * macosArm64. No x86, no Catalyst, no watchOS / tvOS / Linux / Windows.
+ * Native targets are ARM-only per CLAUDE.md §1: iosArm64, iosSimulatorArm64,
+ * Android arm64-v8a (via the new com.android.kotlin.multiplatform.library
+ * plugin), and macosArm64, plus the architecture-neutral jvm target (desktop /
+ * server JVMs). No x86 natives, no Catalyst, no watchOS / tvOS, no Linux /
+ * Windows *native* targets (Linux/Windows are served by the jvm target).
  */
 
 import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
@@ -108,6 +110,14 @@ kotlin {
         withHostTestBuilder { /* enables androidUnitTest */ }
     }
 
+    // --- JVM target (desktop / server) ---------------------------------------
+    // Architecture-neutral bytecode — the one target where the ARM-only rule
+    // has nothing to say. Scheduling is in-process coroutines (see
+    // jvmMain/.../CoroutineBackedScheduler.kt); persistence of the ephemeral
+    // mirror is java.util.prefs via multiplatform-settings. No SKIE, no
+    // KMMBridge — the JVM ships through Maven Central only, like Android.
+    jvm()
+
     // --- JVM toolchain (CLAUDE.md §2: JVM target 21) ------------------------
     @OptIn(ExperimentalKotlinGradlePluginApi::class)
     compilerOptions {
@@ -118,7 +128,9 @@ kotlin {
         allWarningsAsErrors.set(false) // bump to true once codebase settles.
     }
 
-    // Per-target JVM toolchain knobs — Android compilation needs JVM target 21.
+    // Per-target JVM toolchain knobs — pins the jvm() target's bytecode level
+    // (CLAUDE.md §2: JVM target 21). The Android target manages its own level
+    // via the android {} block above.
     targets.withType<org.jetbrains.kotlin.gradle.targets.jvm.KotlinJvmTarget>().configureEach {
         compilations.configureEach {
             compileTaskProvider.configure {
@@ -269,9 +281,10 @@ kmmbridge {
 //     that ties every target together so KMP consumers can write
 //     `implementation("com.happycodelucky.backgrounder:backgrounder:X.Y.Z")` from
 //     `commonMain` and have Gradle resolve the right per-target klib.
-//   * Per-target klibs: `backgrounder-iosarm64`, `backgrounder-iossimulatorarm64`,
-//     `backgrounder-macosarm64`, `backgrounder-android` — one Maven artifact per
-//     publication the KMP plugin registers automatically.
+//   * Per-target artifacts: `backgrounder-iosarm64`, `backgrounder-iossimulatorarm64`,
+//     `backgrounder-macosarm64` (klibs), `backgrounder-android` (AAR), and
+//     `backgrounder-jvm` (JAR) — one Maven artifact per publication the KMP
+//     plugin registers automatically.
 //   * Sources / javadoc jars next to each, with detached GPG signatures.
 //
 // Consumers in another KMP project just add `mavenCentral()` to their
@@ -307,7 +320,7 @@ mavenPublishing {
     // Required by Central — every artifact (jar, aar, klib, module, pom)
     // must carry a detached GPG signature next to it. signAllPublications()
     // applies the signing plugin across every publication the KMP plugin
-    // registered (`kotlinMultiplatform`, `android`, `iosArm64`,
+    // registered (`kotlinMultiplatform`, `android`, `jvm`, `iosArm64`,
     // `iosSimulatorArm64`, `macosArm64`). Central rejects unsigned uploads.
     signAllPublications()
 
@@ -324,7 +337,7 @@ mavenPublishing {
     pom {
         name.set("Backgrounder")
         description.set(
-            "Kotlin Multiplatform background-work scheduler for iOS, macOS, and Android.",
+            "Kotlin Multiplatform background-work scheduler for iOS, macOS, Android, and the JVM.",
         )
         url.set("https://github.com/happycodelucky/backgrounder")
         inceptionYear.set("2026")

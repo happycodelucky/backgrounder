@@ -127,6 +127,7 @@ nav:
     - platforms/android.md
     - platforms/ios.md
     - platforms/macos.md
+    - platforms/jvm.md
     - platforms/force-quit.md
   - Changelog: changelog.md
 

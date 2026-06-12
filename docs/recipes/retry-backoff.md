@@ -37,7 +37,7 @@ Floors and ceilings:
 ## How the cap is enforced
 
 - **Android.** `RegistryDispatchWorker.doWork()` reads `runAttemptCount + 1` and compares against `BackoffPolicy.maxAttempts` (carried through `inputData`). When the cap is reached, the worker returns `Result.failure()` regardless of what the user code returned, so WorkManager doesn't reschedule.
-- **iOS / macOS.** The library tracks attempts in its state store (`tasks.<id>.attempt`). On `Retry`, it increments and checks the cap; on cap-hit it stops resubmitting and treats the result as `Failure`.
+- **iOS / macOS / JVM.** The library tracks attempts itself (iOS persists `tasks.<id>.attempt` in its state store; macOS and the JVM track in-process). On `Retry`, it increments and checks the cap; on cap-hit it stops resubmitting and treats the result as `Failure`.
 - **Periodic.** For periodic workers, `maxAttempts` is a *per-cycle* cap that resets after each `Success`. Exhausting the cap mid-cycle resumes the regular cadence at the next interval rather than killing the schedule.
 
 ## Picking a policy
