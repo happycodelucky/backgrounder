@@ -21,7 +21,7 @@ tasks.forEach { task ->
 | `nextRunHint`        | Best-effort `Instant` of the next scheduled run. May be `null`.                                |
 | `attempt`            | Library-tracked retry attempt counter (within a cycle for periodic).                           |
 | `ephemeral`          | True if this task was scheduled with `ephemeral = true`.                                       |
-| `pendingPredicates`  | Why this task isn't running yet (network, charging, backoff window, earliest-begin window).    |
+| `pendingPredicates`  | Why this task isn't running yet — see [Why work is pending](../concepts/pending-predicates.md). |
 
 ## Per-platform state mapping
 

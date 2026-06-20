@@ -110,6 +110,7 @@ nav:
     - concepts/architecture.md
     - concepts/worker-context-and-di.md
     - concepts/opportunistic-dispatch.md
+    - concepts/pending-predicates.md
     - concepts/ephemeral.md
     - concepts/guarantees.md
   - Recipes:
