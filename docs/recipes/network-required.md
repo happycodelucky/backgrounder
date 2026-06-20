@@ -52,6 +52,37 @@ The gate resolves `Unmetered` against `isDataMetered == false`. An iPhone on cel
 
 On Android, `Unmetered` translates to `NetworkType.UNMETERED` in WorkManager's native gating — same effect as on Apple, just enforced by the OS.
 
+## Require the device to be idle
+
+`WorkConstraints.requiresDeviceIdle = true` asks the platform to defer the work until the device is genuinely idle — not in active use, screen off, the kind of moment the OS reserves for low-priority maintenance. It pairs naturally with `requiresCharging` and `Unmetered` for "sync only when it costs the user nothing" background work.
+
+```kotlin
+backgrounder.schedule(
+    WorkRequest.Periodic(
+        taskId = FeedSync.ID,
+        interval = 1.hours,
+        constraints = WorkConstraints(
+            networkRequired = NetworkRequirement.Unmetered,
+            requiresCharging = true,
+            requiresDeviceIdle = true,
+        ),
+    ),
+)
+```
+
+Unlike `networkRequired`, this constraint has **no library-managed gate** — there is no portable "is the device idle?" signal the library could poll, and idle is a fuzzy, OS-internal notion. So it is enforced only where the OS enforces it natively:
+
+| Platform | `requiresDeviceIdle = true` | Mechanism |
+| --- | --- | --- |
+| **Android** | **Enforced.** | `Constraints.Builder.setRequiresDeviceIdle(true)` → `JobScheduler`. WorkManager holds the worker until the device enters idle / a Doze maintenance window. |
+| **iOS** | **Advisory (no-op).** | `BGProcessingTaskRequest` exposes no idle property — only `requiresExternalPower` and `requiresNetworkConnectivity`. The system *already* prefers idle/charging moments for processing tasks using its own criteria. The library logs a one-line warning and otherwise ignores the flag. |
+| **macOS** | **Advisory (no-op).** | `NSBackgroundActivityScheduler` has no idle primitive; it already biases toward idle via `qualityOfService = .background`. Silently ignored. |
+| **JVM** | **Advisory (no-op).** | No OS idle concept at all. Silently ignored. |
+
+Because it's enforced only on Android, treat `requiresDeviceIdle` the same way you treat `requiresCharging`: a **battery-saving deferral**, not a timing guarantee. On the advisory platforms the work still runs — just whenever the system's normal opportunistic scheduling fires it, with no extra idle gate. See [Opportunistic dispatch](../concepts/opportunistic-dispatch.md) for why "advisory" is the honest answer rather than a missing feature.
+
+Where it surfaces in inspection: on Android, a task waiting on this constraint reports `PendingPredicate.RequiresDeviceIdle` from [`backgrounder.scheduled()`](inspect.md) — mirroring `PendingPredicate.RequiresCharging`. The advisory platforms never emit it (there's no gate to be blocked on).
+
 ## Reading reachability from inside `execute()`
 
 The library doesn't proxy reachability through `WorkerContext`. If you want to inspect the current state inside a worker — for instance, to defer a large transfer on metered networks without forbidding metered entirely — read `Reachability.shared` directly:
@@ -101,5 +132,5 @@ Backgrounder's public `Backgrounder.create(...)` factory has no `reachability:` 
 ## Common pitfalls
 
 - **Don't probe the network from inside `execute()`** if you've set `networkRequired = Any`. The gate has already waited; if it timed out you'll be running with `WorkResult.Retry` not invoked at all, so the body never even ran. Trust the gate.
-- **`requiresCharging` is not honoured on Apple.** `WorkConstraints.requiresCharging` only works on Android (via WorkManager). On iOS / macOS the library would need a separate power-state library to wait for charging; that's out of scope today.
+- **`requiresCharging` and `requiresDeviceIdle` are Android-only.** Both only gate dispatch on Android (via WorkManager). On iOS / macOS / JVM they're advisory: `requiresCharging` would need a separate power-state library to wait on, and there's no portable idle signal at all — see [Require the device to be idle](#require-the-device-to-be-idle). The work still runs on those platforms; it just isn't held back by these two conditions.
 - **The gate is per-invocation, not per-schedule.** Each time the OS fires a worker, the gate runs again with that fire's budget. A flaky network produces a sequence of `Retry`s rather than one long hang.

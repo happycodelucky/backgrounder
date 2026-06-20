@@ -71,6 +71,12 @@ In practice this means: **construct `backgrounder` before `super.onCreate()` ret
 - The worker's `execute()` runs on a coroutine that inherits that dispatcher; switch with `withContext(Dispatchers.IO)` for blocking IO.
 - Logs from inside the worker are tagged `Backgrounder/<taskId>` and the thread is named `Backgrounder/<taskId>` for the duration of `execute()`. This is the mitigation for the single-bridge-worker design — every log includes the task id even though the Worker class is the same for every task.
 
+## Constraints are native
+
+Android is the platform where `WorkConstraints` carries real OS weight. `networkRequired`, `requiresCharging`, and `requiresDeviceIdle` all map straight onto `androidx.work.Constraints` and are enforced by `JobScheduler` — WorkManager will not dispatch the worker until every constraint holds, holding it indefinitely if needed.
+
+`requiresDeviceIdle = true` in particular has no equivalent on the other targets: it maps to `Constraints.Builder.setRequiresDeviceIdle(true)`, so the work runs only when the device enters idle / a Doze maintenance window. A task waiting on it reports `PendingPredicate.RequiresDeviceIdle` from `backgrounder.scheduled()`. On iOS / macOS / JVM the same flag is advisory and ignored — see [Opportunistic dispatch](../concepts/opportunistic-dispatch.md) and [Require the device to be idle](../recipes/network-required.md#require-the-device-to-be-idle).
+
 ## Multi-process apps
 
 `Backgrounder.create(application)` must be called in `Application.onCreate` (which runs in *every* process — main and `:remote`), not from an `androidx.startup` initializer (which doesn't run in non-main processes). The factory closure pattern works the same in every process — each process holds its own `Backgrounder` instance, but they share the same `WorkManager` database, so scheduled work is consistent across processes.

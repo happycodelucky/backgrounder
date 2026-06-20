@@ -40,7 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 The library inserts a pre-execution **reachability gate** that waits up to `min(5 s, ctx.capabilities.maxExecutionTime / 4)` (collapses to ≈5 s under the conservative 5-minute macOS budget) for the requirement to become true. On timeout the worker is short-circuited to `WorkResult.Retry`; `handleOneShotRetry` reschedules a fresh activity with `interval = backoff.delayFor(attempt)`. See [Recipes → Require a network connection](../recipes/network-required.md).
 
-`Unmetered` is honoured against `ReachabilityStatus.isDataMetered == false`. Power constraints (`requiresCharging`) are still not implemented on macOS — workers that need charging should check inside `execute()` and return `Retry`.
+`Unmetered` is honoured against `ReachabilityStatus.isDataMetered == false`. Power and idle constraints (`requiresCharging`, `requiresDeviceIdle`) are not enforced on macOS — `NSBackgroundActivityScheduler` exposes neither, though it already biases toward idle moments via `qualityOfService = .background`. Workers needing a charging or idle precondition should check inside `execute()` and return `Retry`.
 
 ## Periodic is native
 
