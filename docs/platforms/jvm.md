@@ -38,7 +38,7 @@ fun main() {
 
 Same story as macOS: there is no OS constraint concept, so the library inserts a pre-execution **reachability gate** (powered by [reachable](https://github.com/happycodelucky/reachable)) that waits a bounded window for `WorkConstraints.networkRequired` to be satisfied. On timeout the worker is short-circuited to `WorkResult.Retry` and rescheduled per the request's `BackoffPolicy`. See [Recipes → Require a network connection](../recipes/network-required.md).
 
-`Unmetered` is honoured against `ReachabilityStatus.isDataMetered == false`. Power constraints (`requiresCharging`) are not enforced — there is no portable JVM power API; workers that need charging should check inside `execute()` and return `Retry`.
+`Unmetered` is honoured against `ReachabilityStatus.isDataMetered == false`. Power and idle constraints (`requiresCharging`, `requiresDeviceIdle`) are not enforced — there is no portable JVM power or device-idle API; workers that need either precondition should check inside `execute()` and return `Retry`.
 
 ## Periodic is a coroutine loop
 

@@ -452,6 +452,17 @@ internal class BGTaskBackedScheduler(
             }
         }
         requiresExternalPower = constraints.requiresCharging
+        // BGProcessingTaskRequest has no device-idle knob — the OS already prefers
+        // idle moments when it fires background tasks. Log once so consumers know
+        // the constraint was accepted but is not OS-enforced on iOS.
+        if (constraints.requiresDeviceIdle) {
+            log.w {
+                "WorkConstraints.requiresDeviceIdle is not honored on iOS; ignored. " +
+                    "BGProcessingTaskRequest has no device-idle field — the OS schedules " +
+                    "background tasks at opportune (typically idle) moments regardless. " +
+                    "(hint=$hint)"
+            }
+        }
     }
 
     /** Helper so BGAppRefreshTaskRequest can also call applyConstraints() — it's a no-op. */
@@ -460,6 +471,7 @@ internal class BGTaskBackedScheduler(
         @Suppress("UNUSED_PARAMETER") hint: ExecutionHint,
     ) {
         // BGAppRefreshTaskRequest doesn't expose constraints. Documented in plan.
+        // requiresDeviceIdle is likewise unsupported on this request type.
     }
 
     private fun BGTaskRequest.applyConstraints(

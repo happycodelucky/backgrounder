@@ -477,6 +477,8 @@ internal class NSBackgroundActivityBackedScheduler(
                     // the NSBackgroundActivityScheduler is built — the only
                     // dispatch-blocking condition we can observe is the
                     // backoff window when a previous attempt returned Retry.
+                    // requiresCharging and requiresDeviceIdle are not enforced:
+                    // NSBackgroundActivityScheduler has no power or idle primitives.
                     pendingPredicates =
                         if (state0 == ScheduledTask.State.Backoff) {
                             listOf(PendingPredicate.WaitingForBackoff(until = null))

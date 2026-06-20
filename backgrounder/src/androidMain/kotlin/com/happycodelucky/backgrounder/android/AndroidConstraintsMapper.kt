@@ -11,6 +11,7 @@ internal fun WorkConstraints.toWorkManagerConstraints(): Constraints =
         .Builder()
         .setRequiredNetworkType(networkRequired.toNetworkType())
         .setRequiresCharging(requiresCharging)
+        .setRequiresDeviceIdle(requiresDeviceIdle)
         .build()
 
 private fun NetworkRequirement.toNetworkType(): NetworkType =

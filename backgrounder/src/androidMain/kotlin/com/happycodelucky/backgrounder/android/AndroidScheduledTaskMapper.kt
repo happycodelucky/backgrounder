@@ -118,6 +118,9 @@ internal object AndroidScheduledTaskMapper {
             if (c.requiresCharging) {
                 result.add(PendingPredicate.RequiresCharging)
             }
+            if (c.requiresDeviceIdle) {
+                result.add(PendingPredicate.RequiresDeviceIdle)
+            }
         }
         if (nextRunHint != null && nextRunHint > Clock.System.now()) {
             when (state) {
@@ -170,6 +173,7 @@ internal object AndroidScheduledTaskMapper {
                         ConstraintsView(
                             networkType = info.constraints.requiredNetworkType,
                             requiresCharging = info.constraints.requiresCharging(),
+                            requiresDeviceIdle = info.constraints.requiresDeviceIdle(),
                         ),
                 )
         }
@@ -179,6 +183,7 @@ internal object AndroidScheduledTaskMapper {
     internal data class ConstraintsView(
         val networkType: NetworkType,
         val requiresCharging: Boolean,
+        val requiresDeviceIdle: Boolean,
     )
 
     private fun mapState(

@@ -109,6 +109,7 @@ nav:
   - Concepts:
     - concepts/architecture.md
     - concepts/worker-context-and-di.md
+    - concepts/opportunistic-dispatch.md
     - concepts/ephemeral.md
     - concepts/guarantees.md
   - Recipes:

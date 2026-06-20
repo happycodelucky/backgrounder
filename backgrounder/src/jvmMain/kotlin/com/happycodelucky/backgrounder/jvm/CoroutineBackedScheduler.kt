@@ -65,6 +65,8 @@ import kotlin.time.Instant
  *    with, so tasks fire at the interval boundary.
  *  - `WorkConstraints.requiresCharging` is not enforced (no portable JVM power
  *    API) — same caveat as macOS; workers should check inside `execute()`.
+ *  - `WorkConstraints.requiresDeviceIdle` is not enforced (no JVM idle primitive)
+ *    — same caveat as macOS.
  *
  * Like macOS, nothing here survives the process: see [JVM_GUARANTEES] and the
  * process-death contract (LESSONS.md D-020 / D-022).
